@@ -285,12 +285,8 @@ def calculate_indicators(data: pd.DataFrame) -> dict:
 ### 联系方式
 - **GitHub Issues**: 技术问题和bug报告
 - **Discussions**: 功能讨论和建议
-- **Email**: contribute@trading-system.com
+- **Email**: 953534947@qq.com
 
-### 社区资源
-- [开发者文档](docs/development.md)
-- [API参考](docs/api-reference.md)
-- [架构设计](docs/architecture.md)
 
 ## 📄 许可证
 
