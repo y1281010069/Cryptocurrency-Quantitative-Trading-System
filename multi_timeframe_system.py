@@ -188,6 +188,7 @@ class MultiTimeframeProfessionalSystem:
             
             for tf, limit in timeframes.items():
                 df = self.get_timeframe_data(symbol, tf, limit)
+                time.sleep(0.3) 
                 if not df.empty:
                     action, strength = self.analyze_timeframe(df, tf)
                     data[tf] = df
@@ -261,7 +262,7 @@ class MultiTimeframeProfessionalSystem:
             logger.error(f"多时间框架分析{symbol}失败: {e}")
             return None
     
-    def run_analysis(self, max_symbols: int = 20):
+    def run_analysis(self, max_symbols: int = 50):
         """运行多时间框架分析"""
         print("\n" + "="*80)
         print("🚀 多时间框架专业投资系统启动")
@@ -335,8 +336,7 @@ class MultiTimeframeProfessionalSystem:
         
         # 保存文件
         if opportunities:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            txt_file = self.save_txt_report(opportunities, timestamp)
+            txt_file = self.save_txt_report(opportunities, 'new')
             print(f"\n📄 详细报告已保存: {txt_file}")
         
         print(f"\n⏱️  分析完成！用时: {time.time() - start_time:.1f}秒")
@@ -452,7 +452,7 @@ def main():
     """主函数"""
     try:
         system = MultiTimeframeProfessionalSystem()
-        system.run_analysis(max_symbols=20)
+        system.run_analysis(max_symbols=50)
     except KeyboardInterrupt:
         print("\n❌ 用户中断分析")
     except Exception as e:

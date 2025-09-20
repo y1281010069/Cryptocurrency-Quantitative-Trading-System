@@ -384,7 +384,7 @@ class UltimateProfitSystem:
                     # 获取1小时和4小时数据
                     df_1h = self.get_market_data(symbol, '1h', 100)
                     df_4h = self.get_market_data(symbol, '4h', 100)
-                    
+                    time.sleep(1) 
                     if df_1h.empty or df_4h.empty:
                         logger.debug(f"{symbol} 数据获取失败")
                         return None
