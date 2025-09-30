@@ -471,8 +471,8 @@ class MultiTimeframeProfessionalSystem:
         # 筛选符合条件的交易信号
         trade_signals = [
             op for op in opportunities 
-            if (op.total_score >= 0.6 and op.overall_action == "买入") or 
-               (op.total_score <= -0.6 and op.overall_action == "卖出")
+            if (op.total_score >= TRADING_CONFIG['BUY_THRESHOLD'] and op.overall_action == "买入") or 
+               (op.total_score <= TRADING_CONFIG['SELL_THRESHOLD'] and op.overall_action == "卖出")
         ]
         
         # 只有当有交易信号时才生成文件
