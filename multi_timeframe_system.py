@@ -15,6 +15,7 @@ import numpy as np
 import time
 import logging
 import json
+import requests
 from datetime import datetime
 from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -33,8 +34,8 @@ try:
 except ImportError:
     # 使用默认配置
     TRADING_CONFIG = {
-        'BUY_THRESHOLD': 0.6,
-        'SELL_THRESHOLD': -0.6,
+        'BUY_THRESHOLD': 0.5,     # 买入信号评分阈值（大于等于）
+        'SELL_THRESHOLD': -0.5,   # 卖出信号评分阈值（小于等于）
         'ATR_PERIOD': 14,
         'TARGET_MULTIPLIER': 1.5,
         'STOP_LOSS_MULTIPLIER': 1.0,
@@ -562,6 +563,39 @@ class MultiTimeframeProfessionalSystem:
                     f.write(f"分析依据: {'; '.join(signal.reasoning)}\n")
                     f.write("\n" + "=" * 80 + "\n\n")
             
+            # 发送HTTP POST请求到指定API
+            for signal in trade_signals:
+                try:
+                    # 格式化name参数：从KAITO/USDT转换为KAITO-USDT
+                    name = signal.symbol.replace('/', '-')
+                    
+                    # 设置ac_type参数：买入对应o_l，卖出对应o_s
+                    ac_type = 'o_l' if signal.overall_action == '买入' else 'o_s'
+                    
+                    # 构造请求参数
+                    payload = {
+                        'name': name,
+                        'mechanism_id': 13,
+                        'stop_win_price': signal.target_short,
+                        'stop_loss_price': signal.stop_loss,
+                        'ac_type': ac_type,
+                        'loss': 1
+                    }
+                    
+                    # 发送POST请求（表单形式）
+                    url = 'http://149.129.66.131:81/myOrder'
+                    response = requests.post(url, data=payload, timeout=10)
+                    
+                    # 记录请求结果
+                    if response.status_code == 200:
+                        logger.info(f"成功发送交易信号到API: {signal.symbol} ({signal.overall_action})")
+                    else:
+                        logger.warning(f"发送交易信号到API失败 (状态码: {response.status_code}): {signal.symbol}")
+                        logger.debug(f"API响应: {response.text}")
+                    
+                except Exception as e:
+                    logger.error(f"发送交易信号到API时发生错误: {e}")
+                    
             return filename
         
         # 没有交易信号时返回None

@@ -38,8 +38,8 @@ def validate_config():
 # 交易信号配置
 TRADING_CONFIG = {
     # 交易信号评分阈值
-    'BUY_THRESHOLD': 0.6,     # 买入信号评分阈值
-    'SELL_THRESHOLD': -0.6,   # 卖出信号评分阈值
+    'BUY_THRESHOLD': 0.6,     # 买入信号评分阈值（大于等于）
+    'SELL_THRESHOLD': -0.6,   # 卖出信号评分阈值（小于等于）
     
     # ATR配置
     'ATR_PERIOD': 14,         # ATR计算周期
