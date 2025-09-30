@@ -58,7 +58,7 @@ class MultiTimeframeSignal:
     target_medium: float  # 保留字段以确保兼容性
     target_long: float  # 保留字段以确保兼容性
     stop_loss: float  # 基于1倍ATR反向计算的止损价格
-    art_one: float  # 保留字段以确保兼容性
+    atr_one: float  # 保留字段以确保兼容性
     reasoning: List[str]
     timestamp: datetime
 
@@ -298,7 +298,7 @@ class MultiTimeframeProfessionalSystem:
                 target_medium=target_medium,
                 target_long=target_long,
                 stop_loss=stop_loss,
-                art_one=art_one,
+                atr_one=atr_one,
                 reasoning=reasoning,
                 timestamp=datetime.now()
             )
