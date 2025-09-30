@@ -26,7 +26,7 @@ def test_target_multipliers():
             'SELL_THRESHOLD': -0.5,
             'ATR_PERIOD': 14,
             'TARGET_MULTIPLIER': 4.5,
-            'STOP_LOSS_MULTIPLIER': 3,
+            'STOP_LOSS_MULTIPLIER': 1,
             'ENABLED_SYMBOLS': [],
             'DISABLED_SYMBOLS': ['USDC/USDT']
         }
