@@ -274,18 +274,18 @@ class MultiTimeframeProfessionalSystem:
             # 根据交易方向计算ATR相关价格（做多/做空）
             if overall_action == "买入":
                 # 买入方向：
-                # - 1.5倍ATR作为短期目标（当前价格 + 1.5*ATR）
-                # - 1倍ATR作为止损价格（当前价格 - ATR）
+                # - TARGET_MULTIPLIER倍ATR作为短期目标（当前价格 + TARGET_MULTIPLIER*ATR）
+                # - STOP_LOSS_MULTIPLIER倍ATR作为止损价格（当前价格 - STOP_LOSS_MULTIPLIER*ATR）
                 atr_one = current_price + atr_value
-                target_short = current_price + 1.5 * atr_value
-                stop_loss = current_price - atr_value
+                target_short = current_price + TRADING_CONFIG['TARGET_MULTIPLIER'] * atr_value
+                stop_loss = current_price - TRADING_CONFIG['STOP_LOSS_MULTIPLIER'] * atr_value
             else:
                 # 卖出方向：
-                # - 1.5倍ATR作为短期目标（当前价格 - 1.5*ATR）
-                # - 1倍ATR作为止损价格（当前价格 + ATR）
+                # - TARGET_MULTIPLIER倍ATR作为短期目标（当前价格 - TARGET_MULTIPLIER*ATR）
+                # - STOP_LOSS_MULTIPLIER倍ATR作为止损价格（当前价格 + STOP_LOSS_MULTIPLIER*ATR）
                 atr_one = current_price - atr_value
-                target_short = current_price - 1.5 * atr_value
-                stop_loss = current_price + atr_value
+                target_short = current_price - TRADING_CONFIG['TARGET_MULTIPLIER'] * atr_value
+                stop_loss = current_price + TRADING_CONFIG['STOP_LOSS_MULTIPLIER'] * atr_value
             
             # 移除中期和长期目标
             target_medium = 0.0
