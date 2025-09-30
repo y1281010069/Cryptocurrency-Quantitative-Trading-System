@@ -37,10 +37,10 @@ except ImportError:
         'BUY_THRESHOLD': 0.5,     # 买入信号评分阈值（大于等于）
         'SELL_THRESHOLD': -0.5,   # 卖出信号评分阈值（小于等于）
         'ATR_PERIOD': 14,
-        'TARGET_MULTIPLIER': 1.5,
-        'STOP_LOSS_MULTIPLIER': 1.0,
+        'TARGET_MULTIPLIER': 4.5,
+        'STOP_LOSS_MULTIPLIER': 3,
         'ENABLED_SYMBOLS': [],
-        'DISABLED_SYMBOLS': []
+        'DISABLED_SYMBOLS': ['USDC/USDT']
     }
     # 默认Redis配置
     REDIS_CONFIG = {
