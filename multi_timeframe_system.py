@@ -14,16 +14,22 @@ import pandas as pd
 import numpy as np
 import time
 import logging
+import json
 from datetime import datetime
 from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import os
+import redis
 from lib import calculate_atr
+
+# 配置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # 尝试导入配置文件，如果不存在则使用默认值
 try:
-    from config import TRADING_CONFIG
+    from config import TRADING_CONFIG, REDIS_CONFIG
 except ImportError:
     # 使用默认配置
     TRADING_CONFIG = {
@@ -35,11 +41,12 @@ except ImportError:
         'ENABLED_SYMBOLS': [],
         'DISABLED_SYMBOLS': []
     }
+    # 默认Redis配置
+    REDIS_CONFIG = {
+        'ADDR': "localhost:6379",
+        'PASSWORD': ""
+    }
     logger.warning("配置文件未找到，使用默认配置")
-
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 @dataclass
 class MultiTimeframeSignal:
@@ -474,6 +481,56 @@ class MultiTimeframeProfessionalSystem:
             if (op.total_score >= TRADING_CONFIG['BUY_THRESHOLD'] and op.overall_action == "买入") or 
                (op.total_score <= TRADING_CONFIG['SELL_THRESHOLD'] and op.overall_action == "卖出")
         ]
+        
+        # 如果有交易信号，检查Redis中已持有的标的并过滤
+        if len(trade_signals) > 0:
+            try:
+                # 连接Redis
+                host, port = REDIS_CONFIG['ADDR'].split(':')
+                r = redis.Redis(
+                    host=host,
+                    port=int(port),
+                    password=REDIS_CONFIG['PASSWORD'],
+                    decode_responses=True,
+                    socket_timeout=5
+                )
+                
+                # 读取okx_positions_data
+                positions_data = r.get('okx_positions_data')
+                
+                if positions_data:
+                    # 解析JSON数据
+                    positions_info = json.loads(positions_data)
+                    
+                    # 提取已持有的标的（格式：KAITO-USDT-SWAP）
+                    held_symbols = []
+                    if 'm' in positions_info and 'data' in positions_info['m']:
+                        for pos in positions_info['m']['data']:
+                            if 'instId' in pos:
+                                held_symbols.append(pos['instId'])
+                    
+                    # 将Redis中的格式（KAITO-USDT-SWAP）转换为系统中的格式（KAITO/USDT）
+                    held_symbols_converted = []
+                    for symbol in held_symbols:
+                        # 处理格式转换：KAITO-USDT-SWAP -> KAITO/USDT
+                        parts = symbol.split('-')
+                        if len(parts) >= 3:
+                            # 例如：KAITO-USDT-SWAP -> KAITO/USDT
+                            converted_symbol = f"{parts[0]}/{parts[1]}"
+                            held_symbols_converted.append(converted_symbol)
+                    
+                    # 过滤掉已持有的标的
+                    original_count = len(trade_signals)
+                    trade_signals = [signal for signal in trade_signals if signal.symbol not in held_symbols_converted]
+                    
+                    # 记录过滤信息
+                    filtered_count = original_count - len(trade_signals)
+                    if filtered_count > 0:
+                        logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
+                
+            except Exception as e:
+                logger.error(f"Redis连接或数据处理失败: {e}")
+                # 即使Redis出错，也继续处理交易信号，不中断主流程
         
         # 只有当有交易信号时才生成文件
         if len(trade_signals) > 0:
