@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import os
+from lib import calculate_atr
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,10 +38,11 @@ class MultiTimeframeSignal:
     confidence_level: str
     total_score: float
     entry_price: float
-    target_short: float
-    target_medium: float
-    target_long: float
-    stop_loss: float
+    target_short: float  # 1.5倍ATR值 (作为短期目标)
+    target_medium: float  # 保留字段以确保兼容性
+    target_long: float  # 保留字段以确保兼容性
+    stop_loss: float  # 基于1倍ATR反向计算的止损价格
+    art_one: float  # 保留字段以确保兼容性
     reasoning: List[str]
     timestamp: datetime
 
@@ -117,10 +119,16 @@ class MultiTimeframeProfessionalSystem:
         rs = gain / loss
         rsi = (100 - (100 / (1 + rs))).iloc[-1]
         
+        # 计算ATR (平均真实波动幅度)
+        atr_value = calculate_atr(df.copy())
+        
         # 成交量
         volume_avg = df['volume'].rolling(20).mean().iloc[-1]
         volume_current = df['volume'].iloc[-1]
         volume_ratio = volume_current / volume_avg if volume_avg > 0 else 1
+        
+        # 计算ATR值
+        atr_value = calculate_atr(df.copy())
         
         # 评分系统
         score = 0
@@ -216,28 +224,48 @@ class MultiTimeframeProfessionalSystem:
                     total_score -= strength * weight
                     reasoning.append(f"{tf}:{signal}")
             
-            # 确定综合操作 (降低阈值，提高敏感度)
-            if total_score >= 0.3:
+            # 确定综合操作：评分大于0.6时买入，小于-0.6时卖出
+            if total_score >= 0.6:
                 overall_action = "买入"
-                confidence = "高" if total_score >= 0.6 else "中"
-            elif total_score <= -0.3:
+                confidence = "高"
+            elif total_score <= -0.6:
                 overall_action = "卖出"
-                confidence = "高" if total_score <= -0.6 else "中"
+                confidence = "高"
             else:
                 overall_action = "观望"
                 confidence = "低"
             
-            # 计算目标价格
-            if overall_action == "买入":
-                target_short = current_price * 1.02    # 2%短期目标
-                target_medium = current_price * 1.05   # 5%中期目标
-                target_long = current_price * 1.15     # 15%长期目标
-                stop_loss = current_price * 0.97       # 3%止损
+            # 获取15分钟时间框架的数据来计算ATR
+            # 首先检查是否已经有15m的数据
+            if '15m' in data:
+                df_15m = data['15m']
             else:
-                target_short = current_price * 0.98
-                target_medium = current_price * 0.95
-                target_long = current_price * 0.85
-                stop_loss = current_price * 1.03
+                # 如果没有，重新获取数据
+                df_15m = self.get_timeframe_data(symbol, '15m', 50)
+                time.sleep(0.3)
+            
+            # 计算ATR值
+            atr_value = calculate_atr(df_15m)
+            
+            # 计算一倍ATR值
+            if overall_action == "买入":
+                # 一倍ATR = 当前价格 + ATR值
+                art_one = current_price + atr_value
+                # 1.5倍ATR作为短期目标
+                target_short = current_price + 1.5 * atr_value
+                # 使用1倍ATR的反向价格作为止损价格
+                stop_loss = current_price - atr_value
+            else:
+                # 一倍ATR = 当前价格 - ATR值
+                art_one = current_price - atr_value
+                # 1.5倍ATR作为短期目标
+                target_short = current_price - 1.5 * atr_value
+                # 使用1倍ATR的反向价格作为止损价格
+                stop_loss = current_price + atr_value
+            
+            # 移除中期和长期目标
+            target_medium = 0.0
+            target_long = 0.0
             
             return MultiTimeframeSignal(
                 symbol=symbol,
@@ -254,6 +282,7 @@ class MultiTimeframeProfessionalSystem:
                 target_medium=target_medium,
                 target_long=target_long,
                 stop_loss=stop_loss,
+                art_one=art_one,
                 reasoning=reasoning,
                 timestamp=datetime.now()
             )
@@ -338,6 +367,10 @@ class MultiTimeframeProfessionalSystem:
         if opportunities:
             txt_file = self.save_txt_report(opportunities, 'new')
             print(f"\n📄 详细报告已保存: {txt_file}")
+            
+            # 记录交易信号
+            signal_file = self.save_trade_signals(opportunities)
+            print(f"📊 交易信号已记录至: {signal_file}")
         
         print(f"\n⏱️  分析完成！用时: {time.time() - start_time:.1f}秒")
         print("="*80)
@@ -403,6 +436,49 @@ class MultiTimeframeProfessionalSystem:
         print(f"   • 严格执行止损，控制风险")
         print("="*100)
     
+    def save_trade_signals(self, opportunities: List[MultiTimeframeSignal]) -> str:
+        """记录交易信号（买入/卖出）到TXT文件"""
+        # 创建交易信号目录
+        signal_dir = "trade_signals"
+        os.makedirs(signal_dir, exist_ok=True)
+        
+        # 文件名格式：trade_signals_YYYYMMDD_HHMMSS.txt
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{signal_dir}/trade_signals_{timestamp}.txt"
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("=" * 80 + "\n")
+            f.write("📊 交易信号记录\n")
+            f.write("=" * 80 + "\n")
+            f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            
+            # 筛选符合条件的交易信号
+            trade_signals = [
+                op for op in opportunities 
+                if (op.total_score >= 0.6 and op.overall_action == "买入") or 
+                   (op.total_score <= -0.6 and op.overall_action == "卖出")
+            ]
+            
+            f.write(f"记录信号: {len(trade_signals)} 个\n")
+            f.write("=" * 80 + "\n\n")
+            
+            if trade_signals:
+                for i, signal in enumerate(trade_signals, 1):
+                    f.write(f"【信号 {i}】 {signal.symbol}\n")
+                    f.write("-" * 60 + "\n")
+                    f.write(f"操作: {signal.overall_action}\n")
+                    f.write(f"评分: {signal.total_score:.3f}\n")
+                    f.write(f"当前价格: {signal.entry_price:.6f} USDT\n")
+                    f.write(f"目标价格: {signal.target_short:.6f} USDT\n")
+                    f.write(f"止损价格: {signal.stop_loss:.6f} USDT\n")
+                    f.write(f"时间戳: {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"分析依据: {'; '.join(signal.reasoning)}\n")
+                    f.write("\n" + "=" * 80 + "\n\n")
+            else:
+                f.write("当前无符合条件的交易信号\n")
+        
+        return filename
+        
     def save_txt_report(self, opportunities: List[MultiTimeframeSignal], timestamp: str) -> str:
         """保存TXT报告"""
         filename = f"{self.output_dir}/multi_timeframe_analysis_{timestamp}.txt"
@@ -432,9 +508,7 @@ class MultiTimeframeProfessionalSystem:
                 f.write(f"  15分钟信号: {op.m15_signal}\n\n")
                 
                 f.write("目标价格:\n")
-                f.write(f"  短期目标(1-2天): {op.target_short:.6f} USDT\n")
-                f.write(f"  中期目标(3-7天): {op.target_medium:.6f} USDT\n")
-                f.write(f"  长期目标(1-4周): {op.target_long:.6f} USDT\n")
+                f.write(f"  短期目标: {op.target_short:.6f} USDT\n")
                 f.write(f"  止损价格: {op.stop_loss:.6f} USDT\n\n")
                 
                 f.write(f"分析依据: {'; '.join(op.reasoning)}\n")
@@ -459,4 +533,4 @@ def main():
         print(f"❌ 系统错误: {e}")
 
 if __name__ == "__main__":
-    main() 
+    main()

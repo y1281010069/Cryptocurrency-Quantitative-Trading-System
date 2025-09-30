@@ -156,7 +156,9 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
                 m15Signal = tm.group(2).strip()
             
             # 提取目标价格
-            targetShort = targetMedium = targetLong = stopLoss = 0.0
+            targetShort = stopLoss = 0.0
+            
+            # 提取短期目标 (现在是1.5倍ATR)
             target_match = re.search(r'(鐭湡鐩爣|短期目标).*?:?\s*([\d.]+)', block_text)
             if target_match:
                 try:
@@ -164,20 +166,7 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
                 except:
                     pass
             
-            target_match = re.search(r'(涓湡鐩爣|中期目标).*?:?\s*([\d.]+)', block_text)
-            if target_match:
-                try:
-                    targetMedium = float(target_match.group(2).strip())
-                except:
-                    pass
-            
-            target_match = re.search(r'(闀挎湡鐩爣|长期目标).*?:?\s*([\d.]+)', block_text)
-            if target_match:
-                try:
-                    targetLong = float(target_match.group(2).strip())
-                except:
-                    pass
-            
+            # 提取止损价格 (现在是1倍ATR的反向价格)
             target_match = re.search(r'(姝㈡崯浠锋牸|止损价格).*?:?\s*([\d.]+)', block_text)
             if target_match:
                 try:
@@ -188,11 +177,10 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
             # 计算百分比变化
             try:
                 shortPct = ((targetShort / currentPriceValue - 1) * 100) if currentPriceValue > 0 else 0.0
-                mediumPct = ((targetMedium / currentPriceValue - 1) * 100) if currentPriceValue > 0 else 0.0
-                longPct = ((targetLong / currentPriceValue - 1) * 100) if currentPriceValue > 0 else 0.0
                 stopPct = ((stopLoss / currentPriceValue - 1) * 100) if currentPriceValue > 0 else 0.0
+                mediumPct = longPct = 0.0  # 不再使用中期和长期目标
             except (ValueError, ZeroDivisionError):
-                shortPct = mediumPct = longPct = stopPct = 0.0
+                shortPct = stopPct = mediumPct = longPct = 0.0
             
             # 提取分析依据
             reasoning_match = re.search(r'(鍒嗘瀽渚濇嵁:?|分析依据:?)\s*([^\n]+)', block_text)
@@ -212,8 +200,6 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
                 'h1Signal': h1Signal,
                 'm15Signal': m15Signal,
                 'targetShort': targetShort,
-                'targetMedium': targetMedium,
-                'targetLong': targetLong,
                 'stopLoss': stopLoss,
                 'reasoning': reasoning,
                 'shortPct': round(shortPct, 1),
