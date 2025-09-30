@@ -14,6 +14,8 @@ secrets.txt
 logs/
 ultimate_trading.log
 
+trade_signals/
+
 # 分析报告和输出文件
 分析报告/
 multi_timeframe_reports/

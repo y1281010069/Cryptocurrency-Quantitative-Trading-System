@@ -370,7 +370,10 @@ class MultiTimeframeProfessionalSystem:
             
             # 记录交易信号
             signal_file = self.save_trade_signals(opportunities)
-            print(f"📊 交易信号已记录至: {signal_file}")
+            if signal_file:
+                print(f"📊 交易信号已记录至: {signal_file}")
+            else:
+                print("📊 当前无符合条件的交易信号")
         
         print(f"\n⏱️  分析完成！用时: {time.time() - start_time:.1f}秒")
         print("="*80)
@@ -436,33 +439,33 @@ class MultiTimeframeProfessionalSystem:
         print(f"   • 严格执行止损，控制风险")
         print("="*100)
     
-    def save_trade_signals(self, opportunities: List[MultiTimeframeSignal]) -> str:
-        """记录交易信号（买入/卖出）到TXT文件"""
-        # 创建交易信号目录
-        signal_dir = "trade_signals"
-        os.makedirs(signal_dir, exist_ok=True)
+    def save_trade_signals(self, opportunities: List[MultiTimeframeSignal]) -> Optional[str]:
+        """记录交易信号（买入/卖出）到TXT文件，仅当有信号时才生成文件"""
+        # 筛选符合条件的交易信号
+        trade_signals = [
+            op for op in opportunities 
+            if (op.total_score >= 0.6 and op.overall_action == "买入") or 
+               (op.total_score <= -0.6 and op.overall_action == "卖出")
+        ]
         
-        # 文件名格式：trade_signals_YYYYMMDD_HHMMSS.txt
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{signal_dir}/trade_signals_{timestamp}.txt"
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write("=" * 80 + "\n")
-            f.write("📊 交易信号记录\n")
-            f.write("=" * 80 + "\n")
-            f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        # 只有当有交易信号时才生成文件
+        if len(trade_signals) > 0:
+            # 创建交易信号目录
+            signal_dir = "trade_signals"
+            os.makedirs(signal_dir, exist_ok=True)
             
-            # 筛选符合条件的交易信号
-            trade_signals = [
-                op for op in opportunities 
-                if (op.total_score >= 0.6 and op.overall_action == "买入") or 
-                   (op.total_score <= -0.6 and op.overall_action == "卖出")
-            ]
+            # 文件名格式：trade_signals_YYYYMMDD_HHMMSS.txt
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{signal_dir}/trade_signals_{timestamp}.txt"
             
-            f.write(f"记录信号: {len(trade_signals)} 个\n")
-            f.write("=" * 80 + "\n\n")
-            
-            if trade_signals:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write("📊 交易信号记录\n")
+                f.write("=" * 80 + "\n")
+                f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"记录信号: {len(trade_signals)} 个\n")
+                f.write("=" * 80 + "\n\n")
+                
                 for i, signal in enumerate(trade_signals, 1):
                     f.write(f"【信号 {i}】 {signal.symbol}\n")
                     f.write("-" * 60 + "\n")
@@ -474,10 +477,11 @@ class MultiTimeframeProfessionalSystem:
                     f.write(f"时间戳: {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write(f"分析依据: {'; '.join(signal.reasoning)}\n")
                     f.write("\n" + "=" * 80 + "\n\n")
-            else:
-                f.write("当前无符合条件的交易信号\n")
+            
+            return filename
         
-        return filename
+        # 没有交易信号时返回None
+        return None
         
     def save_txt_report(self, opportunities: List[MultiTimeframeSignal], timestamp: str) -> str:
         """保存TXT报告"""
