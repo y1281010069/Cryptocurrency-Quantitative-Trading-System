@@ -21,6 +21,20 @@ from dataclasses import dataclass
 import os
 from lib import calculate_atr
 
+# 尝试导入配置文件，如果不存在则使用默认值
+try:
+    from config import TRADING_CONFIG
+except ImportError:
+    # 使用默认配置
+    TRADING_CONFIG = {
+        'BUY_THRESHOLD': 0.6,
+        'SELL_THRESHOLD': -0.6,
+        'ATR_PERIOD': 14,
+        'TARGET_MULTIPLIER': 1.5,
+        'STOP_LOSS_MULTIPLIER': 1.0
+    }
+    logger.warning("配置文件未找到，使用默认配置")
+
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -224,11 +238,11 @@ class MultiTimeframeProfessionalSystem:
                     total_score -= strength * weight
                     reasoning.append(f"{tf}:{signal}")
             
-            # 确定综合操作：评分大于0.6时买入，小于-0.6时卖出
-            if total_score >= 0.6:
+            # 确定综合操作：根据配置的阈值判断买入、卖出或观望
+            if total_score >= TRADING_CONFIG['BUY_THRESHOLD']:
                 overall_action = "买入"
                 confidence = "高"
-            elif total_score <= -0.6:
+            elif total_score <= TRADING_CONFIG['SELL_THRESHOLD']:
                 overall_action = "卖出"
                 confidence = "高"
             else:
@@ -247,20 +261,20 @@ class MultiTimeframeProfessionalSystem:
             # 计算ATR值
             atr_value = calculate_atr(df_15m)
             
-            # 计算一倍ATR值
+            # 根据交易方向计算ATR相关价格（做多/做空）
             if overall_action == "买入":
-                # 一倍ATR = 当前价格 + ATR值
-                art_one = current_price + atr_value
-                # 1.5倍ATR作为短期目标
+                # 买入方向：
+                # - 1.5倍ATR作为短期目标（当前价格 + 1.5*ATR）
+                # - 1倍ATR作为止损价格（当前价格 - ATR）
+                atr_one = current_price + atr_value
                 target_short = current_price + 1.5 * atr_value
-                # 使用1倍ATR的反向价格作为止损价格
                 stop_loss = current_price - atr_value
             else:
-                # 一倍ATR = 当前价格 - ATR值
-                art_one = current_price - atr_value
-                # 1.5倍ATR作为短期目标
+                # 卖出方向：
+                # - 1.5倍ATR作为短期目标（当前价格 - 1.5*ATR）
+                # - 1倍ATR作为止损价格（当前价格 + ATR）
+                atr_one = current_price - atr_value
                 target_short = current_price - 1.5 * atr_value
-                # 使用1倍ATR的反向价格作为止损价格
                 stop_loss = current_price + atr_value
             
             # 移除中期和长期目标
@@ -472,8 +486,8 @@ class MultiTimeframeProfessionalSystem:
                     f.write(f"操作: {signal.overall_action}\n")
                     f.write(f"评分: {signal.total_score:.3f}\n")
                     f.write(f"当前价格: {signal.entry_price:.6f} USDT\n")
-                    f.write(f"目标价格: {signal.target_short:.6f} USDT\n")
-                    f.write(f"止损价格: {signal.stop_loss:.6f} USDT\n")
+                    f.write(f"短期目标 (1.5倍ATR): {signal.target_short:.6f} USDT\n")
+                    f.write(f"止损价格 (1倍ATR反向价格): {signal.stop_loss:.6f} USDT\n")
                     f.write(f"时间戳: {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write(f"分析依据: {'; '.join(signal.reasoning)}\n")
                     f.write("\n" + "=" * 80 + "\n\n")

@@ -35,9 +35,21 @@ def validate_config():
         )
     return True
 
+# 交易信号配置
+TRADING_CONFIG = {
+    # 交易信号评分阈值
+    'BUY_THRESHOLD': 0.6,     # 买入信号评分阈值
+    'SELL_THRESHOLD': -0.6,   # 卖出信号评分阈值
+    
+    # ATR配置
+    'ATR_PERIOD': 14,         # ATR计算周期
+    'TARGET_MULTIPLIER': 1.5, # 目标价格ATR倍数
+    'STOP_LOSS_MULTIPLIER': 1.0 # 止损价格ATR倍数
+}
+
 if __name__ == "__main__":
     try:
         validate_config()
         print("✅ API配置验证成功!")
     except ValueError as e:
-        print(f"❌ {e}") 
+        print(f"❌ {e}")
