@@ -31,7 +31,9 @@ except ImportError:
         'SELL_THRESHOLD': -0.6,
         'ATR_PERIOD': 14,
         'TARGET_MULTIPLIER': 1.5,
-        'STOP_LOSS_MULTIPLIER': 1.0
+        'STOP_LOSS_MULTIPLIER': 1.0,
+        'ENABLED_SYMBOLS': [],
+        'DISABLED_SYMBOLS': []
     }
     logger.warning("配置文件未找到，使用默认配置")
 
@@ -338,6 +340,17 @@ class MultiTimeframeProfessionalSystem:
             
             volume_filtered.sort(key=lambda x: x[1], reverse=True)
             selected_symbols = [symbol for symbol, _ in volume_filtered[:max_symbols]]
+            
+            # 应用币种过滤
+            enabled_symbols = TRADING_CONFIG.get('ENABLED_SYMBOLS', [])
+            disabled_symbols = TRADING_CONFIG.get('DISABLED_SYMBOLS', [])
+            
+            # 如果有启用的币种列表，则只保留在列表中的币种
+            if enabled_symbols:
+                selected_symbols = [sym for sym in selected_symbols if sym in enabled_symbols]
+            
+            # 排除禁用的币种
+            selected_symbols = [sym for sym in selected_symbols if sym not in disabled_symbols]
             
             print(f"📊 开始分析 {len(selected_symbols)} 个高流动性交易对...")
             print("-"*80)

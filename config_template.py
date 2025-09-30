@@ -44,7 +44,11 @@ TRADING_CONFIG = {
     # ATR配置
     'ATR_PERIOD': 14,         # ATR计算周期
     'TARGET_MULTIPLIER': 1.5, # 目标价格ATR倍数
-    'STOP_LOSS_MULTIPLIER': 1.0 # 止损价格ATR倍数
+    'STOP_LOSS_MULTIPLIER': 1.0, # 止损价格ATR倍数
+    
+    # 币种过滤配置
+    'ENABLED_SYMBOLS': [],    # 启用的币种列表，为空时表示全部启用
+    'DISABLED_SYMBOLS': []    # 禁用的币种列表，优先级高于ENABLED_SYMBOLS
 }
 
 if __name__ == "__main__":
