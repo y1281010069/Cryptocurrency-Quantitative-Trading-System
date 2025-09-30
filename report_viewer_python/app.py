@@ -113,8 +113,8 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
             confidence_match = re.search(r'(淇″績绛夌骇:?|信心等级:?)\s*([^\n]+)', block_text)
             confidence = confidence_match.group(2).strip() if confidence_match else '未知'
             
-            # 提取总评分
-            score_match = re.search(r'(鎬昏瘎鍒?|总评分:)\s*([\d.]+)', block_text)
+            # 提取总评分，支持负数评分
+            score_match = re.search(r'(鎬昏瘎鍒?|总评分:?)\s*(-?[\d.]+)', block_text)
             if score_match:
                 try:
                     totalScore = float(score_match.group(2).strip())
@@ -123,8 +123,8 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
             else:
                 totalScore = 0.0
             
-            # 提取当前价格
-            price_match = re.search(r'(褰撳墠浠锋牸:?|当前价格:?)\s*([\d.]+)', block_text)
+            # 提取当前价格，支持负数价格
+            price_match = re.search(r'(褰撳墠浠锋牸:?|当前价格:?)\s*(-?[\d.]+)', block_text)
             if price_match:
                 try:
                     currentPriceValue = float(price_match.group(2).strip())
@@ -159,7 +159,7 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
             targetShort = stopLoss = 0.0
             
             # 提取短期目标 (现在是1.5倍ATR)
-            target_match = re.search(r'(鐭湡鐩爣|短期目标).*?:?\s*([\d.]+)', block_text)
+            target_match = re.search(r'(鐭湡鐩爣|短期目标).*?:?\s*(-?[\d.]+)', block_text)
             if target_match:
                 try:
                     targetShort = float(target_match.group(2).strip())
@@ -167,7 +167,7 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
                     pass
             
             # 提取止损价格 (现在是1倍ATR的反向价格)
-            target_match = re.search(r'(姝㈡崯浠锋牸|止损价格).*?:?\s*([\d.]+)', block_text)
+            target_match = re.search(r'(姝㈡崯浠锋牸|止损价格).*?:?\s*(-?[\d.]+)', block_text)
             if target_match:
                 try:
                     stopLoss = float(target_match.group(2).strip())
