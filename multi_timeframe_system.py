@@ -40,7 +40,14 @@ except ImportError:
         'TARGET_MULTIPLIER': 4.5,
         'STOP_LOSS_MULTIPLIER': 3,
         'ENABLED_SYMBOLS': [],
-        'DISABLED_SYMBOLS': ['USDC/USDT']
+        'DISABLED_SYMBOLS': ['USDC/USDT'],
+        
+        # 时间框架过滤配置
+        'FILTER_BY_15M': False,   # 是否按15分钟时间框架过滤（买入信号需要15分钟也为买入）
+        'FILTER_BY_1H': False,    # 是否按1小时时间框架过滤（买入信号需要1小时也为买入）
+        
+        # 持仓控制配置
+        'MAX_POSITIONS': 10       # 最大持仓数量限制，超过此数量将放弃新的交易机会
     }
     # 默认Redis配置
     REDIS_CONFIG = {
@@ -477,11 +484,54 @@ class MultiTimeframeProfessionalSystem:
     def save_trade_signals(self, opportunities: List[MultiTimeframeSignal]) -> Optional[str]:
         """记录交易信号（买入/卖出）到TXT文件，仅当有信号时才生成文件"""
         # 筛选符合条件的交易信号
-        trade_signals = [
-            op for op in opportunities 
-            if (op.total_score >= TRADING_CONFIG['BUY_THRESHOLD'] and op.overall_action == "买入") or 
-               (op.total_score <= TRADING_CONFIG['SELL_THRESHOLD'] and op.overall_action == "卖出")
-        ]
+        trade_signals = []
+        
+        for op in opportunities:
+            # 检查是否是买入信号且评分达到阈值
+            if op.total_score >= TRADING_CONFIG['BUY_THRESHOLD'] and op.overall_action == "买入":
+                # 应用时间框架过滤
+                filter_by_15m = TRADING_CONFIG.get('FILTER_BY_15M', False)
+                filter_by_1h = TRADING_CONFIG.get('FILTER_BY_1H', False)
+                
+                # 确定是否需要过滤
+                should_filter = filter_by_15m or filter_by_1h
+                
+                # 如果不需要过滤，直接添加
+                if not should_filter:
+                    trade_signals.append(op)
+                else:
+                    # 检查时间框架条件
+                    is_15m_buy = "买入" in op.m15_signal
+                    is_1h_buy = "买入" in op.h1_signal
+                    
+                    # 根据过滤开关决定是否添加信号
+                    # 逻辑：如果开启了对应过滤，则需要对应时间框架也为买入；如果关闭了过滤，则不考虑该时间框架
+                    if ((not filter_by_15m or is_15m_buy) and 
+                        (not filter_by_1h or is_1h_buy)):
+                        trade_signals.append(op)
+                        
+            # 卖出信号应用时间框架过滤
+            elif op.total_score <= TRADING_CONFIG['SELL_THRESHOLD'] and op.overall_action == "卖出":
+                # 应用时间框架过滤
+                filter_by_15m = TRADING_CONFIG.get('FILTER_BY_15M', False)
+                filter_by_1h = TRADING_CONFIG.get('FILTER_BY_1H', False)
+                
+                # 确定是否需要过滤
+                should_filter = filter_by_15m or filter_by_1h
+                
+                # 如果不需要过滤，直接添加
+                if not should_filter:
+                    trade_signals.append(op)
+                else:
+                    # 检查时间框架条件（卖出信号）
+                    is_15m_sell = "卖出" in op.m15_signal
+                    is_1h_sell = "卖出" in op.h1_signal
+                    
+                    # 根据过滤开关决定是否添加信号
+                    # 逻辑：如果开启了对应过滤，则需要对应时间框架也为卖出；如果关闭了过滤，则不考虑该时间框架
+                    if ((not filter_by_15m or is_15m_sell) and 
+                        (not filter_by_1h or is_1h_sell)):
+                        trade_signals.append(op)
         
         # 如果有交易信号，检查Redis中已持有的标的并过滤
         if len(trade_signals) > 0:
@@ -520,14 +570,23 @@ class MultiTimeframeProfessionalSystem:
                             converted_symbol = f"{parts[0]}/{parts[1]}"
                             held_symbols_converted.append(converted_symbol)
                     
-                    # 过滤掉已持有的标的
-                    original_count = len(trade_signals)
-                    trade_signals = [signal for signal in trade_signals if signal.symbol not in held_symbols_converted]
+                    # 检查持仓数量是否超过最大限制
+                    max_positions = TRADING_CONFIG.get('MAX_POSITIONS', 10)
+                    current_position_count = len(held_symbols_converted)
                     
-                    # 记录过滤信息
-                    filtered_count = original_count - len(trade_signals)
-                    if filtered_count > 0:
-                        logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
+                    if current_position_count >= max_positions:
+                        # 如果已持仓数量超过最大限制，放弃所有交易信号
+                        logger.info(f"当前持仓数量({current_position_count})已达到或超过最大限制({max_positions})，放弃所有交易信号")
+                        trade_signals = []
+                    else:
+                        # 过滤掉已持有的标的
+                        original_count = len(trade_signals)
+                        trade_signals = [signal for signal in trade_signals if signal.symbol not in held_symbols_converted]
+                        
+                        # 记录过滤信息
+                        filtered_count = original_count - len(trade_signals)
+                        if filtered_count > 0:
+                            logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
                 
             except Exception as e:
                 logger.error(f"Redis连接或数据处理失败: {e}")

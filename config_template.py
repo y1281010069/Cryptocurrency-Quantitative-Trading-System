@@ -48,7 +48,14 @@ TRADING_CONFIG = {
     
     # 币种过滤配置
     'ENABLED_SYMBOLS': [],    # 启用的币种列表，为空时表示全部启用
-    'DISABLED_SYMBOLS': []    # 禁用的币种列表，优先级高于ENABLED_SYMBOLS
+    'DISABLED_SYMBOLS': [],    # 禁用的币种列表，优先级高于ENABLED_SYMBOLS
+    
+    # 时间框架过滤配置
+    'FILTER_BY_15M': False,   # 是否根据15分钟时间框架过滤买入信号
+    'FILTER_BY_1H': False,    # 是否根据1小时时间框架过滤买入信号
+    
+    # 持仓控制配置
+    'MAX_POSITIONS': 10       # 最大持仓数量限制，超过此数量将放弃新的交易机会
 }
 
 if __name__ == "__main__":
