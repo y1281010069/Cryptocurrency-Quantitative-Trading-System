@@ -80,15 +80,14 @@ class MultiTimeframeSignal:
 class MultiTimeframeProfessionalSystem:
     """多时间框架专业投资系统"""
     
-    def __init__(self, config_file: str = "config.py", use_official_api: bool = False):
+    def __init__(self, config_file: str = "config.py"):
         """初始化系统
         
         Args:
             config_file: 配置文件路径
-            use_official_api: 是否使用官方python-okx API（True）还是继续使用ccxt（False）
         """
         self.load_config(config_file)
-        self.setup_exchange(use_official_api)
+        self.setup_exchange()
         self.output_dir = "multi_timeframe_reports"
         os.makedirs(self.output_dir, exist_ok=True)
         logger.info("多时间框架专业投资系统初始化完成")
@@ -107,38 +106,11 @@ class MultiTimeframeProfessionalSystem:
             logger.error(f"配置加载失败: {e}")
             raise
     
-    def setup_exchange(self, use_official_api=None):
+    def setup_exchange(self):
         """设置交易所连接
-        
-        Args:
-            use_official_api: 是否使用官方python-okx API（True）还是继续使用ccxt（False）
         """
         try:
-            # 如果没有明确指定use_official_api，则从配置中读取
-            if use_official_api is None:
-                try:
-                    from config import OKX_CONFIG
-                    use_official_api = OKX_CONFIG.get('use_official_api', False)
-                    logger.info(f"从配置文件读取use_official_api设置: {use_official_api}")
-                except ImportError:
-                    logger.warning("未找到config.py，使用默认值False")
-                    use_official_api = False
-            
-            if use_official_api:
-                # 使用官方python-okx API适配器
-                from okx_adapter import get_ccxt_compatible_okx
-                self.exchange = get_ccxt_compatible_okx(
-                    api_key=self.api_key,
-                    secret_key=self.secret_key,
-                    password=self.passphrase,
-                    sandbox=False,
-                    enableRateLimit=True,
-                    timeout=30000
-                )
-                self.exchange.load_markets()
-                logger.info("OKX官方API连接成功")
-            else:
-                # 继续使用ccxt
+            # 使用ccxt连接OKX交易所
                 self.exchange = ccxt.okx({
                     'apiKey': self.api_key,
                     'secret': self.secret_key,
@@ -312,20 +284,37 @@ class MultiTimeframeProfessionalSystem:
             # 计算ATR值
             atr_value = calculate_atr(df_15m)
             
+            # 检查是否所有时间框架都为买入或都为卖出
+            all_agreed = True
+            first_signal = None
+            for signal in signals.values():
+                if not first_signal:
+                    first_signal = signal
+                elif (("买入" in first_signal and "买入" not in signal) or 
+                      ("卖出" in first_signal and "卖出" not in signal)):
+                    all_agreed = False
+                    break
+            
+            # 根据是否所有时间框架一致决定使用的TARGET_MULTIPLIER
+            target_multiplier = TRADING_CONFIG['TARGET_MULTIPLIER']
+            if all_agreed:
+                target_multiplier *= 3  # 所有时间框架一致时，使用3倍的TARGET_MULTIPLIER
+                logger.info(f"{symbol} 所有时间框架信号一致，使用3倍盈亏比")
+            
             # 根据交易方向计算ATR相关价格（做多/做空）
             if overall_action == "买入":
                 # 买入方向：
-                # - TARGET_MULTIPLIER倍ATR作为短期目标（当前价格 + TARGET_MULTIPLIER*ATR）
+                # - target_multiplier倍ATR作为短期目标（当前价格 + target_multiplier*ATR）
                 # - STOP_LOSS_MULTIPLIER倍ATR作为止损价格（当前价格 - STOP_LOSS_MULTIPLIER*ATR）
                 atr_one = current_price + atr_value
-                target_short = current_price + TRADING_CONFIG['TARGET_MULTIPLIER'] * atr_value
+                target_short = current_price + target_multiplier * atr_value
                 stop_loss = current_price - TRADING_CONFIG['STOP_LOSS_MULTIPLIER'] * atr_value
             else:
                 # 卖出方向：
-                # - TARGET_MULTIPLIER倍ATR作为短期目标（当前价格 - TARGET_MULTIPLIER*ATR）
+                # - target_multiplier倍ATR作为短期目标（当前价格 - target_multiplier*ATR）
                 # - STOP_LOSS_MULTIPLIER倍ATR作为止损价格（当前价格 + STOP_LOSS_MULTIPLIER*ATR）
                 atr_one = current_price - atr_value
-                target_short = current_price - TRADING_CONFIG['TARGET_MULTIPLIER'] * atr_value
+                target_short = current_price - target_multiplier * atr_value
                 stop_loss = current_price + TRADING_CONFIG['STOP_LOSS_MULTIPLIER'] * atr_value
             
             # 移除中期和长期目标
@@ -542,7 +531,12 @@ class MultiTimeframeProfessionalSystem:
                     # 逻辑：如果开启了对应过滤，则需要对应时间框架也为买入；如果关闭了过滤，则不考虑该时间框架
                     if ((not filter_by_15m or is_15m_buy) and 
                         (not filter_by_1h or is_1h_buy)):
-                        trade_signals.append(op)
+                        # 添加止损价格过滤：如果止损价格距离当前价格不足0.3%，则过滤掉
+                        price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
+                        if price_diff_percent >= 0.3:
+                            trade_signals.append(op)
+                        else:
+                            logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
                         
             # 卖出信号应用时间框架过滤
             elif op.total_score <= TRADING_CONFIG['SELL_THRESHOLD'] and op.overall_action == "卖出":
@@ -565,7 +559,12 @@ class MultiTimeframeProfessionalSystem:
                     # 逻辑：如果开启了对应过滤，则需要对应时间框架也为卖出；如果关闭了过滤，则不考虑该时间框架
                     if ((not filter_by_15m or is_15m_sell) and 
                         (not filter_by_1h or is_1h_sell)):
-                        trade_signals.append(op)
+                        # 添加止损价格过滤：如果止损价格距离当前价格不足0.3%，则过滤掉
+                        price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
+                        if price_diff_percent >= 0.3:
+                            trade_signals.append(op)
+                        else:
+                            logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
         
         # 如果有交易信号，检查Redis中已持有的标的并过滤
         if len(trade_signals) > 0:

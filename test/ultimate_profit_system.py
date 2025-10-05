@@ -60,10 +60,9 @@ class UltimateProfitSystem:
         
         Args:
             config_file: 配置文件路径
-            use_official_api: 是否使用官方python-okx API（True）还是继续使用ccxt（False）
         """
         self.load_config(config_file)
-        self.setup_exchange(use_official_api)
+        self.setup_exchange()
         self.account_balance = 10000  # 初始资金
         self.max_positions = 5  # 最大持仓数
         self.position_risk = 0.02  # 单笔风险2%
@@ -88,42 +87,11 @@ class UltimateProfitSystem:
             logger.error(f"配置加载失败: {e}")
             raise
     
-    def setup_exchange(self, use_official_api: Optional[bool] = None):
+    def setup_exchange(self):
         """设置交易所连接
-        
-        Args:
-            use_official_api: 是否使用官方python-okx API（True）还是继续使用ccxt（False）
         """
         try:
-            # 如果没有明确指定use_official_api，则从配置中读取
-            if use_official_api is None:
-                try:
-                    from config import OKX_CONFIG
-                    use_official_api = OKX_CONFIG.get('use_official_api', False)
-                    logger.info(f"从配置文件读取use_official_api设置: {use_official_api}")
-                except ImportError:
-                    logger.warning("未找到config.py，使用默认值False")
-                    use_official_api = False
-                    
-            if use_official_api:
-                # 使用官方python-okx API适配器
-                import sys
-                import os
-                # 添加项目根目录到Python路径
-                sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                from okx_adapter import get_ccxt_compatible_okx
-                self.exchange = get_ccxt_compatible_okx(
-                    api_key=self.api_key,
-                    secret_key=self.secret_key,
-                    password=self.passphrase,
-                    sandbox=False,
-                    enableRateLimit=True,
-                    timeout=30000
-                )
-                self.exchange.load_markets()
-                logger.info("OKX官方API连接成功")
-            else:
-                # 继续使用ccxt
+            # 使用ccxt连接OKX交易所
                 self.exchange = ccxt.okx({
                     'apiKey': self.api_key,
                     'secret': self.secret_key,
