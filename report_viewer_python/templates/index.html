@@ -1,10 +1,58 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多时间框架分析报告 - Python版</title>
+{% extends "layout.html" %}
+{% block title %}多时间框架分析报告 - Python版{% endblock %}
+{% block page_title %}多时间框架分析报告{% endblock %}
+
+{% block header_actions %}
+<button id="refresh-btn" class="ml-4 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-md transition-all text-xs">
+    <i class="fa fa-refresh mr-1"></i>刷新数据
+</button>
+{% endblock %}
+
+{% block styles %}
+    <!-- Tailwind配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#4080FF',
+                        success: '#00B42A',
+                        danger: '#F53F3F',
+                        warning: '#FF7D00',
+                        info: '#86909C',
+                        background: '#F2F3F5',
+                        card: '#FFFFFF',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
     
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .text-shadow {
+                text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .card-hover {
+                transition: all 0.3s ease;
+            }
+            .card-hover:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+
     {% macro create_opportunity_card(opportunity) %}
         {% set styles = get_action_styles(opportunity.action).split('\n') %}
         {% set action_color = styles[0].strip() %}
@@ -43,12 +91,6 @@
                         <div class="text-xs text-gray-500">当前价格</div>
                         <div class="text-lg font-bold text-gray-800">{{ opportunity.currentPrice|round(6) }}</div>
                     </div>
-                    <!-- <div class="bg-background rounded-lg p-2">
-                        <div class="text-xs text-gray-500">止损价格</div>
-                        <div class="text-lg font-bold {% if '买入' in opportunity.action %}text-danger{% else %}text-success{% endif %}">
-                            {{ opportunity.stopLoss|round(6) }}
-                        </div>
-                    </div> -->
                 </div>
                 
                 <div class="grid grid-cols-2 gap-2 mb-3">
@@ -104,65 +146,43 @@
             fa-dot-circle-o
         {% endif %}
     {% endmacro %}
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-    
-    <!-- Tailwind配置 -->
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#165DFF',
-                        secondary: '#4080FF',
-                        success: '#00B42A',
-                        danger: '#F53F3F',
-                        warning: '#FF7D00',
-                        info: '#86909C',
-                        background: '#F2F3F5',
-                        card: '#FFFFFF',
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    
-    <style type="text/tailwindcss">
-        @layer utilities {
-            .content-auto {
-                content-visibility: auto;
-            }
-            .text-shadow {
-                text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .card-hover {
-                transition: all 0.3s ease;
-            }
-            .card-hover:hover {
-                transform: translateY(-4px);
-                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-            }
-        }
-    </style>
-</head>
-<body class="bg-background min-h-screen">
-    <header class="bg-primary text-white shadow-lg">
-        <div class="container mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center">
-            <div class="flex items-center space-x-2 mb-3 md:mb-0">
-                <i class="fa fa-line-chart text-2xl"></i>
-                <h1 class="text-xl md:text-2xl font-bold">多时间框架分析报告</h1>
-            </div>
-            <div class="flex items-center text-sm">
-                <span id="report-time">{{ report_data.analysisTime }}</span>
-                <button id="refresh-btn" class="ml-4 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-md transition-all text-xs">
-                    <i class="fa fa-refresh mr-1"></i>刷新数据
-                </button>
+    <!-- 报告摘要 -->
+    <section class="bg-card rounded-xl shadow-md p-4 mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-bold text-gray-800 flex items-center">
+                <i class="fa fa-dashboard mr-2 text-primary"></i>报告摘要
+            </h2>
+            <div class="flex space-x-2">
+                <div class="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">
+                    <i class="fa fa-clock-o mr-1"></i><span id="dimension">{{ report_data.timeframeDimensions }}</span>
+                </div>
             </div>
         </div>
-    </header>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">总机会数</div>
+                <div class="text-xl font-bold text-primary" id="total-opportunities">{{ report_data.totalOpportunities }}</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">买入机会</div>
+                <div class="text-xl font-bold text-success" id="buy-opportunities">{{ buy_count }}</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">卖出机会</div>
+                <div class="text-xl font-bold text-danger" id="sell-opportunities">{{ sell_count }}</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">观望机会</div>
+                <div class="text-xl font-bold text-warning" id="watch-opportunities">{{ watch_count }}</div>
+            </div>
+        </div>
+        
+        <div class="text-sm text-gray-500">
+            <i class="fa fa-clock-o mr-1"></i>
+            <span id="report-time">{{ report_data.analysisTime }}</span>
+        </div>
+    </section>
 
     <main class="container mx-auto px-4 py-6">
         <!-- 报告摘要 -->
@@ -268,316 +288,332 @@
         </div>
     </div>
 
-    <footer class="mt-10 py-6 bg-gray-800 text-white">
-        <div class="container mx-auto px-4 text-center text-sm">
-            <p>多时间框架专业投资分析系统 © 2024 - Python版</p>
-            <p class="text-gray-400 mt-1">本系统仅供参考，不构成投资建议。投资有风险，决策需谨慎。</p>
+
+</main>
+
+<!-- 交易对详情模态框 -->
+<div id="detail-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+    <div class="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="sticky top-0 bg-card p-4 border-b flex justify-between items-center z-10">
+            <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                <i class="fa fa-info-circle mr-2 text-primary"></i>
+                <span id="modal-symbol">交易对详情</span>
+            </h3>
+            <button id="close-modal" class="text-gray-500 hover:text-gray-700 transition-colors">
+                <i class="fa fa-times text-xl"></i>
+            </button>
         </div>
-    </footer>
+        <div class="p-4" id="modal-content">
+            <!-- 模态框内容将通过JavaScript动态填充 -->
+        </div>
+    </div>
+</div>
 
-    <script>
-        // 所有交易机会数据
-        const allOpportunities = {{ report_data.opportunities | tojson | safe }};
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 所有交易机会数据
+    const allOpportunities = {{ report_data.opportunities | tojson | safe }};
+    
+    // 初始化筛选功能
+    function initFilters() {
+        const filterButtons = document.querySelectorAll('.filter-btn');
         
-        // 初始化筛选功能
-        function initFilters() {
-            const filterButtons = document.querySelectorAll('.filter-btn');
-            
-            filterButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    // 更新按钮样式
-                    filterButtons.forEach(btn => {
-                        btn.classList.remove('bg-primary', 'text-white');
-                        btn.classList.add('bg-gray-100', 'text-gray-700');
-                    });
-                    this.classList.remove('bg-gray-100', 'text-gray-700');
-                    this.classList.add('bg-primary', 'text-white');
-                    
-                    // 获取筛选类型
-                    const filterType = this.dataset.filter;
-                    
-                    // 获取搜索框内容
-                    const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
-                    
-                    // 调用筛选函数
-                    filterOpportunities(filterType, searchTerm);
+        filterButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                // 更新按钮样式
+                filterButtons.forEach(btn => {
+                    btn.classList.remove('bg-primary', 'text-white');
+                    btn.classList.add('bg-gray-100', 'text-gray-700');
                 });
-            });
-        }
-
-        // 初始化搜索功能
-        function initSearch() {
-            const searchInput = document.getElementById('search-input');
-            
-            searchInput.addEventListener('input', function() {
-                const searchTerm = this.value.toLowerCase().trim();
+                this.classList.remove('bg-gray-100', 'text-gray-700');
+                this.classList.add('bg-primary', 'text-white');
                 
-                // 获取当前选中的筛选类型
-                let filterType = 'all';
-                document.querySelectorAll('.filter-btn').forEach(btn => {
-                    if (btn.classList.contains('bg-primary')) {
-                        filterType = btn.dataset.filter;
-                    }
-                });
+                // 获取筛选类型
+                const filterType = this.dataset.filter;
+                
+                // 获取搜索框内容
+                const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
                 
                 // 调用筛选函数
                 filterOpportunities(filterType, searchTerm);
             });
-        }
+        });
+    }
 
-        // 筛选交易机会
-        function filterOpportunities(filterType, searchTerm) {
-            // 获取所有卡片
-            const cards = document.querySelectorAll('#opportunities-container > div');
-            let visibleCount = 0;
+    // 初始化搜索功能
+    function initSearch() {
+        const searchInput = document.getElementById('search-input');
+        
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase().trim();
             
-            cards.forEach(card => {
-                const symbol = card.dataset.symbol.toLowerCase();
-                const action = card.dataset.action;
-                
-                // 检查是否匹配筛选条件
-                const actionMatch = (filterType === 'all' || action.includes(filterType));
-                const searchMatch = (searchTerm === '' || symbol.includes(searchTerm));
-                
-                if (actionMatch && searchMatch) {
-                    card.classList.remove('hidden');
-                    visibleCount++;
-                } else {
-                    card.classList.add('hidden');
+            // 获取当前选中的筛选类型
+            let filterType = 'all';
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                if (btn.classList.contains('bg-primary')) {
+                    filterType = btn.dataset.filter;
                 }
             });
             
-            // 更新计数
-            document.getElementById('visible-count').textContent = visibleCount;
-            
-            // 检查是否需要显示空状态
-            checkEmptyState();
-        }
+            // 调用筛选函数
+            filterOpportunities(filterType, searchTerm);
+        });
+    }
 
-        // 初始化卡片点击事件
-        function initCardClickEvents() {
-            const cards = document.querySelectorAll('#opportunities-container > div');
-            const modal = document.getElementById('detail-modal');
-            const closeModal = document.getElementById('close-modal');
-            const modalContent = document.getElementById('modal-content');
-            const modalSymbol = document.getElementById('modal-symbol');
+    // 筛选交易机会
+    function filterOpportunities(filterType, searchTerm) {
+        // 获取所有卡片
+        const cards = document.querySelectorAll('#opportunities-container > div');
+        let visibleCount = 0;
+        
+        cards.forEach(card => {
+            const symbol = card.dataset.symbol.toLowerCase();
+            const action = card.dataset.action;
             
-            cards.forEach(card => {
-                card.addEventListener('click', function() {
-                    const symbol = this.dataset.symbol;
-                    const opportunity = allOpportunities.find(op => op.symbol === symbol);
+            // 检查是否匹配筛选条件
+            const actionMatch = (filterType === 'all' || action.includes(filterType));
+            const searchMatch = (searchTerm === '' || symbol.includes(searchTerm));
+            
+            if (actionMatch && searchMatch) {
+                card.classList.remove('hidden');
+                visibleCount++;
+            } else {
+                card.classList.add('hidden');
+            }
+        });
+        
+        // 更新计数
+        document.getElementById('visible-count').textContent = visibleCount;
+        
+        // 检查是否需要显示空状态
+        checkEmptyState();
+    }
+
+    // 初始化卡片点击事件
+    function initCardClickEvents() {
+        const cards = document.querySelectorAll('#opportunities-container > div');
+        const modal = document.getElementById('detail-modal');
+        const closeModal = document.getElementById('close-modal');
+        const modalContent = document.getElementById('modal-content');
+        const modalSymbol = document.getElementById('modal-symbol');
+        
+        cards.forEach(card => {
+            card.addEventListener('click', function() {
+                const symbol = this.dataset.symbol;
+                const opportunity = allOpportunities.find(op => op.symbol === symbol);
+                
+                if (opportunity) {
+                    // 更新模态框标题
+                    modalSymbol.textContent = `${opportunity.symbol} 详细分析`;
                     
-                    if (opportunity) {
-                        // 更新模态框标题
-                        modalSymbol.textContent = `${opportunity.symbol} 详细分析`;
-                        
-                        // 渲染模态框内容
-                        modalContent.innerHTML = renderOpportunityDetail(opportunity);
-                        
-                        // 显示模态框
-                        modal.classList.remove('hidden');
-                        
-                        // 防止背景滚动
-                        document.body.style.overflow = 'hidden';
-                    }
-                });
+                    // 渲染模态框内容
+                    modalContent.innerHTML = renderOpportunityDetail(opportunity);
+                    
+                    // 显示模态框
+                    modal.classList.remove('hidden');
+                    
+                    // 防止背景滚动
+                    document.body.style.overflow = 'hidden';
+                }
             });
-            
-            // 关闭模态框
-            closeModal.addEventListener('click', function() {
+        });
+        
+        // 关闭模态框
+        closeModal.addEventListener('click', function() {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        });
+        
+        // 点击模态框背景关闭
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
                 modal.classList.add('hidden');
                 document.body.style.overflow = '';
-            });
-            
-            // 点击模态框背景关闭
-            modal.addEventListener('click', function(e) {
-                if (e.target === modal) {
-                    modal.classList.add('hidden');
-                    document.body.style.overflow = '';
-                }
-            });
-            
-            // ESC键关闭模态框
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-                    modal.classList.add('hidden');
-                    document.body.style.overflow = '';
-                }
-            });
-        }
-
-        // 渲染交易机会详情
-        function renderOpportunityDetail(opportunity) {
-            let actionColor, actionIcon;
-            
-            if (opportunity.action.includes('买入')) {
-                actionColor = 'bg-success/10 text-success';
-                actionIcon = 'fa-arrow-up';
-            } else if (opportunity.action.includes('卖出')) {
-                actionColor = 'bg-danger/10 text-danger';
-                actionIcon = 'fa-arrow-down';
-            } else {
-                actionColor = 'bg-warning/10 text-warning';
-                actionIcon = 'fa-eye';
             }
-            
-            return `
-                <div class="mb-5">
-                    <div class="flex justify-between items-center mb-3">
-                        <h4 class="text-lg font-bold text-gray-800">基本信息</h4>
-                        <span class="px-3 py-1 rounded-full text-sm font-medium ${actionColor}">
-                            <i class="fa ${actionIcon} mr-1"></i>${opportunity.action}
-                        </span>
-                    </div>
-                    
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div class="bg-background rounded-lg p-3">
-                            <div class="text-xs text-gray-500">排名</div>
-                            <div class="text-xl font-bold text-primary">TOP ${opportunity.rank}</div>
-                        </div>
-                        ${opportunity.symbol && opportunity.symbol.includes('模拟数据') ? `
-                        <div class="bg-warning/10 border border-warning/30 rounded-lg p-3 md:col-span-3">
-                            <div class="text-xs text-warning flex items-center">
-                                <i class="fa fa-info-circle mr-1"></i>
-                                当前显示的是模拟数据，系统无法读取或解析报告文件。
-                            </div>
-                        </div>
-                        ` : ''}
-                        <div class="bg-background rounded-lg p-3">
-                            <div class="text-xs text-gray-500">评分</div>
-                            <div class="text-xl font-bold text-primary">${opportunity.totalScore.toFixed(3)}</div>
-                        </div>
-                        <div class="bg-background rounded-lg p-3">
-                            <div class="text-xs text-gray-500">信心等级</div>
-                            <div class="text-xl font-bold text-yellow-500">${opportunity.confidence}</div>
-                        </div>
-                        <div class="bg-background rounded-lg p-3">
-                            <div class="text-xs text-gray-500">当前价格</div>
-                            <div class="text-xl font-bold text-gray-800">${opportunity.currentPrice.toFixed(6)} USDT</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mb-5">
-                    <h4 class="text-lg font-bold text-gray-800 mb-3">多时间框架分析</h4>
-                    <div class="bg-background rounded-lg p-4">
-                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                            <div class="flex items-center">
-                                <i class="fa fa-calendar-check-o text-primary mr-2"></i>
-                                <span class="font-medium">周线趋势:</span>
-                                <span class="ml-2">${opportunity.weeklyTrend}</span>
-                            </div>
-                            <div class="flex items-center">
-                                <i class="fa fa-calendar text-primary mr-2"></i>
-                                <span class="font-medium">日线趋势:</span>
-                                <span class="ml-2">${opportunity.dailyTrend}</span>
-                            </div>
-                            <div class="flex items-center">
-                                <i class="fa fa-clock-o text-primary mr-2"></i>
-                                <span class="font-medium">4小时信号:</span>
-                                <span class="ml-2">${opportunity.h4Signal}</span>
-                            </div>
-                            <div class="flex items-center">
-                                <i class="fa fa-hourglass-half text-primary mr-2"></i>
-                                <span class="font-medium">1小时信号:</span>
-                                <span class="ml-2">${opportunity.h1Signal}</span>
-                            </div>
-                            <div class="flex items-center">
-                                <i class="fa fa-clock-o text-primary mr-2"></i>
-                                <span class="font-medium">15分钟信号:</span>
-                                <span class="ml-2">${opportunity.m15Signal}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mb-5">
-                    <h4 class="text-lg font-bold text-gray-800 mb-3">目标价格与止损</h4>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div class="bg-background rounded-lg p-4">
-                            <h5 class="text-sm font-semibold text-gray-700 mb-2">目标价格</h5>
-                            <div class="space-y-2 text-sm">
-                                <div class="flex justify-between items-center">
-                                    <span>短期目标 (1.5倍ATR)</span>
-                                    <div class="flex items-center">
-                                        <span class="font-medium mr-2">${opportunity.targetShort.toFixed(6)} USDT</span>
-                                        <span class="text-success">+${opportunity.shortPct}%</span>
-                                    </div>
-                                </div>
-                                <div class="flex justify-between items-center">
-                                    <span>止损价格 (1倍ATR反向价格)</span>
-                                    <div class="flex items-center">
-                                        <span class="font-medium mr-2">${opportunity.stopLoss.toFixed(6)} USDT</span>
-                                        <span class="${opportunity.stopPct > 0 ? 'text-success' : 'text-danger'}">${opportunity.stopPct > 0 ? '+' : ''}${opportunity.stopPct}%</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="bg-background rounded-lg p-4">
-                            <h5 class="text-sm font-semibold text-gray-700 mb-2">风险控制</h5>
-                            <div class="space-y-2 text-sm">
-                                <div class="h-2 bg-gray-200 rounded-full mt-3">
-                                    <div class="h-full bg-primary rounded-full" style="width: 80%"></div>
-                                </div>
-                                <div class="flex justify-between text-xs text-gray-500 mt-1">
-                                    <span>风险</span>
-                                    <span>收益</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
-                    <h4 class="text-lg font-bold text-gray-800 mb-3">分析依据</h4>
-                    <div class="bg-background rounded-lg p-4">
-                        <p class="text-sm text-gray-700">${opportunity.reasoning}</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        // 检查并显示空状态
-        function checkEmptyState() {
-            const visibleCount = parseInt(document.getElementById('visible-count').textContent);
-            const emptyState = document.getElementById('empty-state');
-            const opportunitiesContainer = document.getElementById('opportunities-container');
-            
-            if (visibleCount === 0) {
-                emptyState.classList.remove('hidden');
-                opportunitiesContainer.classList.add('hidden');
-            } else {
-                emptyState.classList.add('hidden');
-                opportunitiesContainer.classList.remove('hidden');
+        });
+        
+        // ESC键关闭模态框
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+                modal.classList.add('hidden');
+                document.body.style.overflow = '';
             }
-        }
+        });
+    }
 
-        // 刷新数据函数
-        function refreshData() {
-            // 显示加载指示器
-            const refreshBtn = document.getElementById('refresh-btn');
-            const originalContent = refreshBtn.innerHTML;
-            refreshBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>刷新中...';
-            refreshBtn.disabled = true;
-            
-            // 重新加载页面以获取最新数据
-            window.location.reload();
+    // 渲染交易机会详情
+    function renderOpportunityDetail(opportunity) {
+        let actionColor, actionIcon;
+        
+        if (opportunity.action.includes('买入')) {
+            actionColor = 'bg-success/10 text-success';
+            actionIcon = 'fa-arrow-up';
+        } else if (opportunity.action.includes('卖出')) {
+            actionColor = 'bg-danger/10 text-danger';
+            actionIcon = 'fa-arrow-down';
+        } else {
+            actionColor = 'bg-warning/10 text-warning';
+            actionIcon = 'fa-eye';
         }
         
-        // 页面加载完成后执行
-        document.addEventListener('DOMContentLoaded', function() {
-            // 初始化筛选功能
-            initFilters();
+        return `
+            <div class="mb-5">
+                <div class="flex justify-between items-center mb-3">
+                    <h4 class="text-lg font-bold text-gray-800">基本信息</h4>
+                    <span class="px-3 py-1 rounded-full text-sm font-medium ${actionColor}">
+                        <i class="fa ${actionIcon} mr-1"></i>${opportunity.action}
+                    </span>
+                </div>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div class="bg-background rounded-lg p-3">
+                        <div class="text-xs text-gray-500">排名</div>
+                        <div class="text-xl font-bold text-primary">TOP ${opportunity.rank}</div>
+                    </div>
+                    ${opportunity.symbol && opportunity.symbol.includes('模拟数据') ? `
+                    <div class="bg-warning/10 border border-warning/30 rounded-lg p-3 md:col-span-3">
+                        <div class="text-xs text-warning flex items-center">
+                            <i class="fa fa-info-circle mr-1"></i>
+                            当前显示的是模拟数据，系统无法读取或解析报告文件。
+                        </div>
+                    </div>
+                    ` : ''}
+                    <div class="bg-background rounded-lg p-3">
+                        <div class="text-xs text-gray-500">评分</div>
+                        <div class="text-xl font-bold text-primary">${opportunity.totalScore.toFixed(3)}</div>
+                    </div>
+                    <div class="bg-background rounded-lg p-3">
+                        <div class="text-xs text-gray-500">信心等级</div>
+                        <div class="text-xl font-bold text-yellow-500">${opportunity.confidence}</div>
+                    </div>
+                    <div class="bg-background rounded-lg p-3">
+                        <div class="text-xs text-gray-500">当前价格</div>
+                        <div class="text-xl font-bold text-gray-800">${opportunity.currentPrice.toFixed(6)} USDT</div>
+                    </div>
+                </div>
+            </div>
             
-            // 初始化搜索功能
-            initSearch();
+            <div class="mb-5">
+                <h4 class="text-lg font-bold text-gray-800 mb-3">多时间框架分析</h4>
+                <div class="bg-background rounded-lg p-4">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                        <div class="flex items-center">
+                            <i class="fa fa-calendar-check-o text-primary mr-2"></i>
+                            <span class="font-medium">周线趋势:</span>
+                            <span class="ml-2">${opportunity.weeklyTrend}</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fa fa-calendar text-primary mr-2"></i>
+                            <span class="font-medium">日线趋势:</span>
+                            <span class="ml-2">${opportunity.dailyTrend}</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fa fa-clock-o text-primary mr-2"></i>
+                            <span class="font-medium">4小时信号:</span>
+                            <span class="ml-2">${opportunity.h4Signal}</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fa fa-hourglass-half text-primary mr-2"></i>
+                            <span class="font-medium">1小时信号:</span>
+                            <span class="ml-2">${opportunity.h1Signal}</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fa fa-clock-o text-primary mr-2"></i>
+                            <span class="font-medium">15分钟信号:</span>
+                            <span class="ml-2">${opportunity.m15Signal}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
             
-            // 初始化卡片点击事件
-            initCardClickEvents();
+            <div class="mb-5">
+                <h4 class="text-lg font-bold text-gray-800 mb-3">目标价格与止损</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="bg-background rounded-lg p-4">
+                        <h5 class="text-sm font-semibold text-gray-700 mb-2">目标价格</h5>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between items-center">
+                                <span>短期目标 (1.5倍ATR)</span>
+                                <div class="flex items-center">
+                                    <span class="font-medium mr-2">${opportunity.targetShort.toFixed(6)} USDT</span>
+                                    <span class="text-success">+${opportunity.shortPct}%</span>
+                                </div>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span>止损价格 (1倍ATR反向价格)</span>
+                                <div class="flex items-center">
+                                    <span class="font-medium mr-2">${opportunity.stopLoss.toFixed(6)} USDT</span>
+                                    <span class="${opportunity.stopPct > 0 ? 'text-success' : 'text-danger'}">${opportunity.stopPct > 0 ? '+' : ''}${opportunity.stopPct}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-background rounded-lg p-4">
+                        <h5 class="text-sm font-semibold text-gray-700 mb-2">风险控制</h5>
+                        <div class="space-y-2 text-sm">
+                            <div class="h-2 bg-gray-200 rounded-full mt-3">
+                                <div class="h-full bg-primary rounded-full" style="width: 80%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>风险</span>
+                                <span>收益</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
             
-            // 初始化刷新按钮
-            document.getElementById('refresh-btn').addEventListener('click', refreshData);
-        });
-    </script>
-</body>
-</html>
+            <div class="mb-3">
+                <h4 class="text-lg font-bold text-gray-800 mb-3">分析依据</h4>
+                <div class="bg-background rounded-lg p-4">
+                    <p class="text-sm text-gray-700">${opportunity.reasoning}</p>
+                </div>
+            </div>
+        `;
+    }
+
+    // 检查并显示空状态
+    function checkEmptyState() {
+        const visibleCount = parseInt(document.getElementById('visible-count').textContent);
+        const emptyState = document.getElementById('empty-state');
+        const opportunitiesContainer = document.getElementById('opportunities-container');
+        
+        if (visibleCount === 0) {
+            emptyState.classList.remove('hidden');
+            opportunitiesContainer.classList.add('hidden');
+        } else {
+            emptyState.classList.add('hidden');
+            opportunitiesContainer.classList.remove('hidden');
+        }
+    }
+
+    // 刷新数据函数
+    function refreshData() {
+        // 显示加载指示器
+        const refreshBtn = document.getElementById('refresh-btn');
+        const originalContent = refreshBtn.innerHTML;
+        refreshBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>刷新中...';
+        refreshBtn.disabled = true;
+        
+        // 重新加载页面以获取最新数据
+        window.location.reload();
+    }
+    
+    // 页面加载完成后执行
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化筛选功能
+        initFilters();
+        
+        // 初始化搜索功能
+        initSearch();
+        
+        // 初始化卡片点击事件
+        initCardClickEvents();
+        
+        // 初始化刷新按钮
+        document.getElementById('refresh-btn').addEventListener('click', refreshData);
+    });
+</script>
+{% endblock %}

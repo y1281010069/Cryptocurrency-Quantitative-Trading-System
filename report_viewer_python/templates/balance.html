@@ -1,0 +1,631 @@
+{% extends "layout.html" %}
+{% block title %}OKX 余额查询 - Python版{% endblock %}
+{% block page_title %}OKX 余额查询{% endblock %}
+
+{% block header_actions %}
+<button id="refresh-balance-btn" class="ml-4 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-md transition-all text-xs">
+    <i class="fa fa-refresh mr-1"></i>刷新余额
+</button>
+{% endblock %}
+
+{% block styles %}
+    <!-- Tailwind配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#4080FF',
+                        success: '#00B42A',
+                        danger: '#F53F3F',
+                        warning: '#FF7D00',
+                        info: '#86909C',
+                        background: '#F2F3F5',
+                        card: '#FFFFFF',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .text-shadow {
+                text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .card-hover {
+                transition: all 0.3s ease;
+            }
+            .card-hover:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+
+    <!-- 余额总览卡片 -->
+    <section class="bg-card rounded-xl shadow-md p-4 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-gray-800 flex items-center">
+                <i class="fa fa-balance-scale mr-2 text-primary"></i>资产总览
+            </h2>
+            <div class="flex items-center text-sm">
+                <span id="last-update-time" class="text-gray-500">最后更新: 加载中...</span>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">总资产 (USDT)</div>
+                <div class="text-xl font-bold text-primary" id="total-assets">0.00</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">可用余额 (USDT)</div>
+                <div class="text-xl font-bold text-success" id="available-assets">0.00</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">持仓价值 (USDT)</div>
+                <div class="text-xl font-bold text-info" id="position-assets">0.00</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">未实现盈亏 (USDT)</div>
+                <div class="text-xl font-bold text-warning" id="unrealized-pnl">0.00</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 资产类型选择器 -->
+    <div class="flex space-x-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+        <button class="filter-btn px-4 py-2 bg-primary text-white rounded-lg text-sm whitespace-nowrap active-filter-btn" data-asset-type="all">
+            全部资产
+        </button>
+        <button class="filter-btn px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm whitespace-nowrap" data-asset-type="fiat">
+            法币
+        </button>
+        <button class="filter-btn px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm whitespace-nowrap" data-asset-type="crypto">
+            加密货币
+        </button>
+        <button class="filter-btn px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm whitespace-nowrap" data-asset-type="stable">
+            稳定币
+        </button>
+    </div>
+
+    <!-- 搜索框 -->
+    <div class="relative mb-6">
+        <i class="fa fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+        <input type="text" id="search-input" placeholder="搜索资产..." 
+               class="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all">
+    </div>
+
+    <!-- 资产列表 -->
+    <div class="bg-card rounded-xl shadow-md p-4 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-gray-800 flex items-center">
+                <i class="fa fa-list-alt mr-2 text-primary"></i>资产详情
+            </h2>
+            <div class="text-sm text-gray-500">
+                共 <span id="asset-count">0</span> 项资产
+            </div>
+        </div>
+
+        <!-- 资产表格 -->
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">资产名称</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">可用余额</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">冻结余额</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">总余额</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">USDT价值</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">占比</th>
+                    </tr>
+                </thead>
+                <tbody id="assets-table-body" class="bg-white divide-y divide-gray-200">
+                    <!-- 资产数据将通过JavaScript动态填充 -->
+                    <tr class="text-center">
+                        <td colspan="6" class="px-6 py-10 text-gray-500">
+                            <i class="fa fa-spinner fa-spin text-2xl mb-2 block"></i>
+                            <div>正在加载资产数据...</div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 资产分布图表 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- 饼图展示资产分布 -->
+        <div class="bg-card rounded-xl shadow-md p-4">
+            <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                <i class="fa fa-pie-chart mr-2 text-primary"></i>资产分布
+            </h2>
+            <div class="h-64">
+                <canvas id="assets-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- 最近交易 -->
+        <div class="bg-card rounded-xl shadow-md p-4">
+            <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                <i class="fa fa-exchange mr-2 text-primary"></i>最近交易
+            </h2>
+            <div id="recent-transactions" class="space-y-3 max-h-64 overflow-y-auto pr-2">
+                <!-- 交易数据将通过JavaScript动态填充 -->
+                <div class="text-center text-gray-500 py-4">
+                    <i class="fa fa-spinner fa-spin text-2xl mb-2 block"></i>
+                    <div>正在加载交易数据...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载状态遮罩 -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black/30 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl p-6 text-center">
+            <i class="fa fa-spinner fa-spin text-4xl text-primary mb-4"></i>
+            <h3 class="text-lg font-bold text-gray-800 mb-2">正在连接OKX API</h3>
+            <p class="text-gray-500" id="loading-message">请稍候，正在获取最新余额数据...</p>
+        </div>
+    </div>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+
+<script>
+    // API获取余额数据
+    function fetchBalanceData() {
+        return fetch('/api/balance')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('网络响应错误');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    return data.data;
+                } else {
+                    throw new Error(data.error || '获取余额数据失败');
+                }
+            })
+            .catch(error => {
+                console.error('获取余额数据出错:', error);
+                // 出错时返回模拟数据
+                return getMockBalanceData();
+            });
+    }
+    
+    // 模拟余额数据
+    function getMockBalanceData() {
+        return {
+            total: 12345.67,
+            available: 8901.23,
+            positions: 3444.44,
+            unrealizedPnl: -123.45,
+            assets: [
+                { symbol: 'USDT', name: 'Tether', available: 5000.00, frozen: 200.00, total: 5200.00, usdtValue: 5200.00, type: 'stable' },
+                { symbol: 'BTC', name: 'Bitcoin', available: 0.1, frozen: 0.0, total: 0.1, usdtValue: 4500.00, type: 'crypto' },
+                { symbol: 'ETH', name: 'Ethereum', available: 1.5, frozen: 0.0, total: 1.5, usdtValue: 2300.00, type: 'crypto' },
+                { symbol: 'USD', name: 'US Dollar', available: 200.00, frozen: 0.0, total: 200.00, usdtValue: 200.00, type: 'fiat' },
+                { symbol: 'BUSD', name: 'Binance USD', available: 150.00, frozen: 0.0, total: 150.00, usdtValue: 150.00, type: 'stable' },
+                { symbol: 'SOL', name: 'Solana', available: 5.0, frozen: 0.0, total: 5.0, usdtValue: 130.50, type: 'crypto' },
+                { symbol: 'XRP', name: 'Ripple', available: 100.0, frozen: 0.0, total: 100.0, usdtValue: 65.17, type: 'crypto' },
+                { symbol: 'DOGE', name: 'Dogecoin', available: 1000.0, frozen: 0.0, total: 1000.0, usdtValue: 50.00, type: 'crypto' }
+            ],
+            recentTransactions: [
+                { symbol: 'BTC', type: 'buy', amount: 0.05, price: 45000.00, time: '2023-06-15 14:30:00' },
+                { symbol: 'ETH', type: 'sell', amount: 0.5, price: 1533.00, time: '2023-06-15 10:15:00' },
+                { symbol: 'USDT', type: 'deposit', amount: 1000.00, price: 1.00, time: '2023-06-14 16:45:00' },
+                { symbol: 'SOL', type: 'buy', amount: 5.0, price: 26.10, time: '2023-06-14 09:20:00' },
+                { symbol: 'XRP', type: 'buy', amount: 100.0, price: 0.6517, time: '2023-06-13 18:00:00' }
+            ]
+        };
+    }
+
+    // 格式化数字
+    function formatNumber(num, decimals = 2) {
+        if (num === null || num === undefined) return '0.00';
+        return parseFloat(num).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    // 初始化资产类型筛选
+    function initAssetTypeFilters() {
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        
+        filterButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                // 更新按钮样式
+                filterButtons.forEach(btn => {
+                    btn.classList.remove('bg-primary', 'text-white');
+                    btn.classList.add('bg-gray-100', 'text-gray-700');
+                });
+                this.classList.remove('bg-gray-100', 'text-gray-700');
+                this.classList.add('bg-primary', 'text-white');
+                
+                // 获取筛选类型
+                const assetType = this.dataset.assetType;
+                
+                // 获取搜索框内容
+                const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
+                
+                // 调用筛选函数
+                filterAssets(assetType, searchTerm);
+            });
+        });
+    }
+
+    // 初始化搜索功能
+    function initSearch() {
+        const searchInput = document.getElementById('search-input');
+        
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase().trim();
+            
+            // 获取当前选中的筛选类型
+            let assetType = 'all';
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                if (btn.classList.contains('bg-primary')) {
+                    assetType = btn.dataset.assetType;
+                }
+            });
+            
+            // 调用筛选函数
+            filterAssets(assetType, searchTerm);
+        });
+    }
+
+    // 筛选资产
+    function filterAssets(assetType, searchTerm) {
+        const rows = document.querySelectorAll('#assets-table-body tr');
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+            // 跳过加载状态行
+            if (row.querySelector('.fa-spinner')) return;
+            
+            const symbol = row.dataset.symbol.toLowerCase();
+            const assetTypeName = row.dataset.assetType;
+            
+            // 检查是否匹配筛选条件
+            const typeMatch = (assetType === 'all' || assetTypeName === assetType);
+            const searchMatch = (searchTerm === '' || symbol.includes(searchTerm));
+            
+            if (typeMatch && searchMatch) {
+                row.classList.remove('hidden');
+                visibleCount++;
+            } else {
+                row.classList.add('hidden');
+            }
+        });
+        
+        // 更新计数
+        document.getElementById('asset-count').textContent = visibleCount;
+    }
+
+    // 渲染资产表格
+    function renderAssetsTable(assets) {
+        const tableBody = document.getElementById('assets-table-body');
+        
+        // 清空表格
+        tableBody.innerHTML = '';
+        
+        if (!assets || assets.length === 0) {
+            tableBody.innerHTML = `
+                <tr class="text-center">
+                    <td colspan="6" class="px-6 py-10 text-gray-500">
+                        <i class="fa fa-info-circle text-2xl mb-2 block"></i>
+                        <div>暂无资产数据</div>
+                    </td>
+                </tr>
+            `;
+            document.getElementById('asset-count').textContent = '0';
+            return;
+        }
+        
+        // 计算总资产用于占比计算
+        const totalAssets = assets.reduce((sum, asset) => sum + asset.usdtValue, 0);
+        
+        // 按USDT价值排序（从高到低）
+        assets.sort((a, b) => b.usdtValue - a.usdtValue);
+        
+        // 添加资产行
+        assets.forEach(asset => {
+            const percentage = totalAssets > 0 ? (asset.usdtValue / totalAssets * 100).toFixed(2) : '0.00';
+            
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-gray-50 transition-colors';
+            row.dataset.symbol = asset.symbol;
+            row.dataset.assetType = asset.type;
+            
+            row.innerHTML = `
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                        <div class="ml-4">
+                            <div class="text-sm font-medium text-gray-900">${asset.symbol}</div>
+                            <div class="text-sm text-gray-500">${asset.name}</div>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">${formatNumber(asset.available, 6)}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-500">${formatNumber(asset.frozen, 6)}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900">${formatNumber(asset.total, 6)}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-primary">${formatNumber(asset.usdtValue)}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div class="bg-primary h-2.5 rounded-full" style="width: ${percentage}%"></div>
+                        </div>
+                        <span class="ml-2 text-sm text-gray-500">${percentage}%</span>
+                    </div>
+                </td>
+            `;
+            
+            tableBody.appendChild(row);
+        });
+        
+        // 更新资产计数
+        document.getElementById('asset-count').textContent = assets.length;
+    }
+
+    // 渲染资产分布饼图
+    function renderAssetsChart(assets) {
+        const ctx = document.getElementById('assets-chart').getContext('2d');
+        
+        // 按USDT价值排序，并只显示前5个资产，其余合并为"其他"
+        const sortedAssets = [...assets].sort((a, b) => b.usdtValue - a.usdtValue);
+        const topAssets = sortedAssets.slice(0, 5);
+        const otherAssets = sortedAssets.slice(5);
+        
+        // 计算"其他"资产的总价值
+        const otherTotal = otherAssets.reduce((sum, asset) => sum + asset.usdtValue, 0);
+        
+        // 如果有"其他"资产，添加到图表数据中
+        if (otherTotal > 0) {
+            topAssets.push({ symbol: '其他', usdtValue: otherTotal });
+        }
+        
+        // 准备图表数据
+        const labels = topAssets.map(asset => asset.symbol);
+        const data = topAssets.map(asset => asset.usdtValue);
+        
+        // 生成随机颜色
+        const colors = generateChartColors(labels.length);
+        
+        // 销毁已存在的图表实例（如果有）
+        if (window.assetsChart) {
+            window.assetsChart.destroy();
+        }
+        
+        // 创建新图表
+        window.assetsChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 12,
+                            padding: 15,
+                            font: {
+                                size: 11
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(2);
+                                return `${label}: $${formatNumber(value)} (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                cutout: '60%'
+            }
+        });
+    }
+
+    // 生成图表颜色
+    function generateChartColors(count) {
+        const colors = [
+            '#165DFF', '#00B42A', '#F53F3F', '#FF7D00', '#722ED1',
+            '#13C2C2', '#FAAD14', '#EB2F96', '#52C41A', '#FA541C',
+            '#73D13D', '#36CFC9', '#40A9FF', '#6952CC', '#FF85C0'
+        ];
+        
+        // 如果需要的颜色数量超过预定义颜色数量，重复使用预定义颜色
+        const result = [];
+        for (let i = 0; i < count; i++) {
+            result.push(colors[i % colors.length]);
+        }
+        
+        return result;
+    }
+
+    // 渲染最近交易
+    function renderRecentTransactions(transactions) {
+        const transactionsContainer = document.getElementById('recent-transactions');
+        
+        // 清空容器
+        transactionsContainer.innerHTML = '';
+        
+        if (!transactions || transactions.length === 0) {
+            transactionsContainer.innerHTML = `
+                <div class="text-center text-gray-500 py-4">
+                    <i class="fa fa-info-circle text-lg mb-2 block"></i>
+                    <div>暂无交易记录</div>
+                </div>
+            `;
+            return;
+        }
+        
+        // 添加交易记录
+        transactions.forEach(transaction => {
+            const isBuy = transaction.type === 'buy';
+            const isSell = transaction.type === 'sell';
+            const isDeposit = transaction.type === 'deposit';
+            const isWithdrawal = transaction.type === 'withdrawal';
+            
+            let typeClass, typeIcon, typeText;
+            
+            if (isBuy) {
+                typeClass = 'bg-success/10 text-success';
+                typeIcon = 'fa-arrow-down';
+                typeText = '买入';
+            } else if (isSell) {
+                typeClass = 'bg-danger/10 text-danger';
+                typeIcon = 'fa-arrow-up';
+                typeText = '卖出';
+            } else if (isDeposit) {
+                typeClass = 'bg-primary/10 text-primary';
+                typeIcon = 'fa-plus-circle';
+                typeText = '充值';
+            } else {
+                typeClass = 'bg-warning/10 text-warning';
+                typeIcon = 'fa-minus-circle';
+                typeText = '提现';
+            }
+            
+            const transactionElement = document.createElement('div');
+            transactionElement.className = 'bg-background rounded-lg p-3 card-hover';
+            
+            transactionElement.innerHTML = `
+                <div class="flex justify-between items-center mb-1">
+                    <div class="font-medium text-gray-800">${transaction.symbol}</div>
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium ${typeClass}">
+                        <i class="fa ${typeIcon} mr-1"></i>${typeText}
+                    </span>
+                </div>
+                <div class="flex justify-between text-sm text-gray-500">
+                    <span>${formatNumber(transaction.amount, 6)} ${transaction.symbol}</span>
+                    <span>¥${formatNumber(transaction.amount * transaction.price)}</span>
+                </div>
+                <div class="mt-1 text-xs text-gray-400">
+                    ${transaction.time}
+                </div>
+            `;
+            
+            transactionsContainer.appendChild(transactionElement);
+        });
+    }
+
+    // 显示加载遮罩
+    function showLoading(show = true) {
+        const overlay = document.getElementById('loading-overlay');
+        if (show) {
+            overlay.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        } else {
+            overlay.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    }
+
+    // 刷新余额数据
+    function refreshBalance() {
+        // 显示加载状态
+        showLoading(true);
+        
+        // 从API获取余额数据
+        fetchBalanceData().then(data => {
+            // 更新界面
+            updateBalanceUI(data);
+            
+            // 隐藏加载状态
+            showLoading(false);
+        }).catch(error => {
+            console.error('刷新余额数据失败:', error);
+            
+            // 即使出错，也要隐藏加载状态
+            showLoading(false);
+            
+            // 可以在这里添加错误提示
+            alert('刷新余额数据失败，请稍后再试。');
+        });
+    }
+
+    // 更新余额UI
+    function updateBalanceUI(data) {
+        // 更新资产总览
+        document.getElementById('total-assets').textContent = formatNumber(data.total);
+        document.getElementById('available-assets').textContent = formatNumber(data.available);
+        document.getElementById('position-assets').textContent = formatNumber(data.positions);
+        document.getElementById('unrealized-pnl').textContent = formatNumber(data.unrealizedPnl);
+        
+        // 更新最后更新时间
+        const now = new Date();
+        const formattedTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+        document.getElementById('last-update-time').textContent = `最后更新: ${formattedTime}`;
+        
+        // 渲染资产表格
+        renderAssetsTable(data.assets);
+        
+        // 渲染资产分布饼图
+        renderAssetsChart(data.assets);
+        
+        // 渲染最近交易
+        renderRecentTransactions(data.recentTransactions);
+        
+        // 应用当前筛选条件
+        const activeFilterBtn = document.querySelector('.filter-btn.bg-primary');
+        const assetType = activeFilterBtn ? activeFilterBtn.dataset.assetType : 'all';
+        const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
+        filterAssets(assetType, searchTerm);
+    }
+
+    // 页面加载完成后执行
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化资产类型筛选
+        initAssetTypeFilters();
+        
+        // 初始化搜索功能
+        initSearch();
+        
+        // 初始化刷新按钮
+        const refreshBtn = document.getElementById('refresh-balance-btn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', refreshBalance);
+        }
+        
+        // 初始加载余额数据
+        refreshBalance();
+    });
+</script>
+{% endblock %}

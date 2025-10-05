@@ -1,5 +1,6 @@
 # 核心交易库
 ccxt>=4.0.0
+python-okx>=0.4.0  # OKX交易所官方Python SDK
 
 # 数据处理
 pandas>=1.5.0
@@ -12,7 +13,8 @@ openpyxl>=3.0.0
 python-dotenv>=0.19.0
 
 # 多线程处理
-concurrent-futures>=3.1.1
+# concurrent-futures是Python 3.2+的标准库，不需要单独安装
 
 # 数据库
-sqlite3 
+# sqlite3是Python的标准库，不需要单独安装
+pymysql>=1.0.0  # MySQL数据库连接库

@@ -80,10 +80,15 @@ class MultiTimeframeSignal:
 class MultiTimeframeProfessionalSystem:
     """多时间框架专业投资系统"""
     
-    def __init__(self, config_file: str = "config.py"):
-        """初始化系统"""
+    def __init__(self, config_file: str = "config.py", use_official_api: bool = False):
+        """初始化系统
+        
+        Args:
+            config_file: 配置文件路径
+            use_official_api: 是否使用官方python-okx API（True）还是继续使用ccxt（False）
+        """
         self.load_config(config_file)
-        self.setup_exchange()
+        self.setup_exchange(use_official_api)
         self.output_dir = "multi_timeframe_reports"
         os.makedirs(self.output_dir, exist_ok=True)
         logger.info("多时间框架专业投资系统初始化完成")
@@ -102,19 +107,48 @@ class MultiTimeframeProfessionalSystem:
             logger.error(f"配置加载失败: {e}")
             raise
     
-    def setup_exchange(self):
-        """设置交易所连接"""
+    def setup_exchange(self, use_official_api=None):
+        """设置交易所连接
+        
+        Args:
+            use_official_api: 是否使用官方python-okx API（True）还是继续使用ccxt（False）
+        """
         try:
-            self.exchange = ccxt.okx({
-                'apiKey': self.api_key,
-                'secret': self.secret_key,
-                'password': self.passphrase,
-                'sandbox': False,
-                'enableRateLimit': True,
-                'timeout': 30000,
-            })
-            self.exchange.load_markets()
-            logger.info("交易所连接成功")
+            # 如果没有明确指定use_official_api，则从配置中读取
+            if use_official_api is None:
+                try:
+                    from config import OKX_CONFIG
+                    use_official_api = OKX_CONFIG.get('use_official_api', False)
+                    logger.info(f"从配置文件读取use_official_api设置: {use_official_api}")
+                except ImportError:
+                    logger.warning("未找到config.py，使用默认值False")
+                    use_official_api = False
+            
+            if use_official_api:
+                # 使用官方python-okx API适配器
+                from okx_adapter import get_ccxt_compatible_okx
+                self.exchange = get_ccxt_compatible_okx(
+                    api_key=self.api_key,
+                    secret_key=self.secret_key,
+                    password=self.passphrase,
+                    sandbox=False,
+                    enableRateLimit=True,
+                    timeout=30000
+                )
+                self.exchange.load_markets()
+                logger.info("OKX官方API连接成功")
+            else:
+                # 继续使用ccxt
+                self.exchange = ccxt.okx({
+                    'apiKey': self.api_key,
+                    'secret': self.secret_key,
+                    'password': self.passphrase,
+                    'sandbox': False,
+                    'enableRateLimit': True,
+                    'timeout': 30000,
+                })
+                self.exchange.load_markets()
+                logger.info("CCXT OKX连接成功")
         except Exception as e:
             logger.error(f"交易所连接失败: {e}")
             raise

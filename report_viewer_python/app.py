@@ -1,13 +1,107 @@
 from flask import Flask, render_template, request, jsonify
 import re
 import os
+import sys
+import json
+import time
+import ccxt
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 尝试导入配置
+config = None
+try:
+    # 先尝试导入Config类（适配app.py的期望结构）
+    from config import Config
+    config = Config()
+except ImportError:
+    try:
+        # 如果没有Config类，尝试直接导入配置变量（适配config_template.py的结构）
+        from config import API_KEY, SECRET_KEY, PASSPHRASE, OKX_CONFIG
+        class ImportedConfig:
+            def __init__(self):
+                self.okx_api_key = API_KEY or OKX_CONFIG.get('api_key', '')
+                self.okx_api_secret = SECRET_KEY or OKX_CONFIG.get('secret', '')
+                self.okx_api_passphrase = PASSPHRASE or OKX_CONFIG.get('passphrase', '')
+                self.use_official_api = OKX_CONFIG.get('use_official_api', False)
+        config = ImportedConfig()
+        print("信息: 从config.py成功导入配置变量")
+    except ImportError:
+        print("警告: 无法导入config.py文件，将使用默认配置")
+        # 创建一个默认配置类
+        class DefaultConfig:
+            def __init__(self):
+                # 使用与env.example和config_template.py一致的环境变量名称
+                self.okx_api_key = os.environ.get('OKX_API_KEY', '')
+                self.okx_api_secret = os.environ.get('OKX_SECRET_KEY', '')
+                self.okx_api_passphrase = os.environ.get('OKX_PASSPHRASE', '')
+                self.use_official_api = False
+        config = DefaultConfig()
 
 app = Flask(__name__)
 
 # 配置默认的报告文件路径
 DEFAULT_REPORT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'multi_timeframe_reports', 'multi_timeframe_analysis_new.txt')
+
+# 初始化OKX交易所连接
+okx_exchange = None
+def init_okx_exchange():
+    """初始化OKX交易所连接"""
+    global okx_exchange
+    try:
+        print("=== 开始初始化OKX交易所连接 ===")
+        # 检查API密钥是否已配置
+        has_key = bool(config.okx_api_key)
+        has_secret = bool(config.okx_api_secret)
+        has_passphrase = bool(config.okx_api_passphrase)
+        
+        print(f"API密钥配置状态: key={has_key}, secret={has_secret}, passphrase={has_passphrase}")
+        print(f"API密钥长度: key={len(config.okx_api_key) if has_key else 0}, secret={len(config.okx_api_secret) if has_secret else 0}, passphrase={len(config.okx_api_passphrase) if has_passphrase else 0}")
+        
+        if not has_key or not has_secret or not has_passphrase:
+            missing = []
+            if not has_key: missing.append("API_KEY")
+            if not has_secret: missing.append("API_SECRET")
+            if not has_passphrase: missing.append("PASSPHRASE")
+            print(f"警告: OKX API密钥未完全配置 - 缺少: {', '.join(missing)}，将使用模拟数据")
+            return False
+        
+        # 创建OKX交易所实例
+        print("正在创建OKX交易所实例...")
+        okx_exchange = ccxt.okx({
+            'apiKey': config.okx_api_key,
+            'secret': config.okx_api_secret,
+            'password': config.okx_api_passphrase,
+            'enableRateLimit': True,
+            'options': {
+                'defaultType': 'spot'
+            }
+        })
+        
+        # 验证连接是否成功
+        try:
+            print("正在验证OKX连接...")
+            okx_exchange.load_markets()
+            print("OKX交易所连接成功 - 已成功加载市场数据")
+            return True
+        except Exception as e:
+            print(f"OKX交易所连接失败: {e}")
+            print(f"错误类型: {type(e).__name__}")
+            okx_exchange = None
+            return False
+    except Exception as e:
+        print(f"初始化OKX交易所连接时发生错误: {e}")
+        print(f"错误类型: {type(e).__name__}")
+        okx_exchange = None
+        return False
+    finally:
+        print(f"=== OKX连接初始化完成 - 连接状态: {'已连接' if okx_exchange else '未连接'} ===")
+
+# 初始化OKX连接
+init_okx_exchange()
 
 
 def parse_report_content(file_path=DEFAULT_REPORT_PATH):
@@ -244,11 +338,197 @@ def parse_report_content(file_path=DEFAULT_REPORT_PATH):
 
 
 
+def get_okx_balance():
+    """获取OKX交易所的账户余额数据"""
+    print("=== 开始获取OKX余额数据 ===")
+    # 如果没有成功连接到OKX或API密钥未配置，返回模拟数据
+    if not okx_exchange:
+        print("OKX连接状态: 未连接 - 将返回模拟数据")
+        return get_mock_balance_data()
+    else:
+        print("OKX连接状态: 已连接 - 尝试获取真实余额数据")
+    
+    try:
+        # 获取账户余额
+        balances = okx_exchange.fetch_balance()
+        
+        # 准备返回数据
+        result = {
+            'total': 0.0,
+            'available': 0.0,
+            'positions': 0.0,
+            'unrealizedPnl': 0.0,
+            'assets': [],
+            'recentTransactions': []
+        }
+        
+        # 处理资产数据
+        total_assets = 0.0
+        for currency, balance_info in balances.items():
+            # 跳过没有余额的资产
+            if balance_info['total'] <= 0: 
+                continue
+            
+            # 获取资产价格（如果有）
+            try:
+                # 获取USDT价格，如果无法获取则默认为0
+                if currency == 'USDT':
+                    price = 1.0
+                else:
+                    # 尝试获取交易对的最新价格
+                    ticker = okx_exchange.fetch_ticker(f'{currency}/USDT')
+                    price = ticker['last'] if ticker else 0.0
+            except:
+                price = 0.0
+            
+            # 计算USDT价值
+            usdt_value = balance_info['total'] * price
+            total_assets += usdt_value
+            
+            # 确定资产类型
+            asset_type = 'crypto'
+            if currency in ['USD', 'EUR', 'JPY', 'CNY']:
+                asset_type = 'fiat'
+            elif currency in ['USDT', 'BUSD', 'USDC', 'DAI']:
+                asset_type = 'stable'
+            
+            # 获取资产名称
+            asset_name = get_asset_name(currency)
+            
+            # 添加到资产列表
+            result['assets'].append({
+                'symbol': currency,
+                'name': asset_name,
+                'available': balance_info['free'],
+                'frozen': balance_info['used'],
+                'total': balance_info['total'],
+                'usdtValue': usdt_value,
+                'type': asset_type
+            })
+        
+        # 更新总资产信息
+        result['total'] = total_assets
+        result['available'] = sum(asset['available'] * (1 if asset['symbol'] == 'USDT' else 0) for asset in result['assets'])
+        
+        # 按USDT价值排序资产
+        result['assets'].sort(key=lambda x: x['usdtValue'], reverse=True)
+        
+        # 尝试获取最近交易（需要额外的API调用权限）
+        try:
+            # 获取最近的5条交易记录
+            recent_orders = okx_exchange.fetch_closed_orders(limit=5)
+            for order in recent_orders:
+                if order['status'] == 'closed' and order['amount'] > 0:
+                    # 确定交易类型
+                    if order['side'] == 'buy':
+                        type_text = 'buy'
+                    elif order['side'] == 'sell':
+                        type_text = 'sell'
+                    else:
+                        type_text = 'unknown'
+                    
+                    # 添加到最近交易列表
+                    result['recentTransactions'].append({
+                        'symbol': order['symbol'].split('/')[0],
+                        'type': type_text,
+                        'amount': order['amount'],
+                        'price': order['price'],
+                        'time': datetime.fromtimestamp(order['timestamp'] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+        except Exception as e:
+            print(f"获取最近交易记录失败: {e}")
+            # 继续执行，不影响主要功能
+        
+        return result
+    except Exception as e:
+        print(f"获取OKX余额数据失败: {e}")
+        # 出错时返回模拟数据
+        return get_mock_balance_data()
+
+def get_mock_balance_data():
+    """获取模拟的余额数据"""
+    print("=== 获取模拟余额数据 ===")
+    print("警告: 当前使用的是模拟数据，而不是真实的OKX账户数据")
+    print("可能的原因:")
+    print("1. API密钥未正确配置")
+    print("2. OKX连接验证失败")
+    print("3. 获取余额时API调用出错")
+    print("请检查API密钥配置和网络连接状态")
+    print("=========================")
+    return {
+        'total': 12345.67,
+        'available': 8901.23,
+        'positions': 3444.44,
+        'unrealizedPnl': -123.45,
+        'assets': [
+            {'symbol': 'USDT', 'name': 'Tether', 'available': 5000.00, 'frozen': 200.00, 'total': 5200.00, 'usdtValue': 5200.00, 'type': 'stable'},
+            {'symbol': 'BTC', 'name': 'Bitcoin', 'available': 0.1, 'frozen': 0.0, 'total': 0.1, 'usdtValue': 4500.00, 'type': 'crypto'},
+            {'symbol': 'ETH', 'name': 'Ethereum', 'available': 1.5, 'frozen': 0.0, 'total': 1.5, 'usdtValue': 2300.00, 'type': 'crypto'},
+            {'symbol': 'USD', 'name': 'US Dollar', 'available': 200.00, 'frozen': 0.0, 'total': 200.00, 'usdtValue': 200.00, 'type': 'fiat'},
+            {'symbol': 'BUSD', 'name': 'Binance USD', 'available': 150.00, 'frozen': 0.0, 'total': 150.00, 'usdtValue': 150.00, 'type': 'stable'},
+            {'symbol': 'SOL', 'name': 'Solana', 'available': 5.0, 'frozen': 0.0, 'total': 5.0, 'usdtValue': 130.50, 'type': 'crypto'},
+            {'symbol': 'XRP', 'name': 'Ripple', 'available': 100.0, 'frozen': 0.0, 'total': 100.0, 'usdtValue': 65.17, 'type': 'crypto'},
+            {'symbol': 'DOGE', 'name': 'Dogecoin', 'available': 1000.0, 'frozen': 0.0, 'total': 1000.0, 'usdtValue': 50.00, 'type': 'crypto'}
+        ],
+        'recentTransactions': [
+            {'symbol': 'BTC', 'type': 'buy', 'amount': 0.05, 'price': 45000.00, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+            {'symbol': 'ETH', 'type': 'sell', 'amount': 0.5, 'price': 1533.00, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+            {'symbol': 'USDT', 'type': 'deposit', 'amount': 1000.00, 'price': 1.00, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+            {'symbol': 'SOL', 'type': 'buy', 'amount': 5.0, 'price': 26.10, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+            {'symbol': 'XRP', 'type': 'buy', 'amount': 100.0, 'price': 0.6517, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        ]
+    }
+
+def get_asset_name(symbol):
+    """获取加密货币的完整名称"""
+    asset_names = {
+        'BTC': 'Bitcoin',
+        'ETH': 'Ethereum',
+        'USDT': 'Tether',
+        'BUSD': 'Binance USD',
+        'SOL': 'Solana',
+        'XRP': 'Ripple',
+        'DOGE': 'Dogecoin',
+        'ADA': 'Cardano',
+        'DOT': 'Polkadot',
+        'LTC': 'Litecoin',
+        'LINK': 'Chainlink',
+        'UNI': 'Uniswap',
+        'USDC': 'USD Coin',
+        'DAI': 'Dai',
+        'AVAX': 'Avalanche',
+        'SOL': 'Solana',
+        'DOT': 'Polkadot',
+        'MATIC': 'Polygon',
+        'SHIB': 'Shiba Inu',
+        'TRX': 'Tron',
+        'ATOM': 'Cosmos',
+        'ALGO': 'Algorand',
+        'XTZ': 'Tezos',
+        'EOS': 'EOS',
+        'XMR': 'Monero',
+        'DASH': 'Dash',
+        'ZEC': 'Zcash',
+        'BCH': 'Bitcoin Cash',
+        'ETC': 'Ethereum Classic',
+        'BSV': 'Bitcoin SV',
+        'FIL': 'Filecoin',
+        'AAVE': 'Aave',
+        'COMP': 'Compound',
+        'MKR': 'Maker',
+        'SNX': 'Synthetix',
+        'YFI': 'Yearn Finance',
+        'USD': 'US Dollar',
+        'EUR': 'Euro',
+        'JPY': 'Japanese Yen',
+        'CNY': 'Chinese Yuan'
+    }
+    return asset_names.get(symbol, symbol)
 
 
 @app.route('/')
 def index():
-    """主页面路由"""
+    """主页面路由 - 多时间框架分析报告"""
     # 从URL参数获取报告文件路径
     report_path = request.args.get('file', DEFAULT_REPORT_PATH)
     # 解析报告数据
@@ -264,7 +544,8 @@ def index():
                           report_data=report_data,
                           buy_count=buy_count,
                           sell_count=sell_count,
-                          watch_count=watch_count)
+                          watch_count=watch_count,
+                          now=datetime.now())
 
 
 @app.route('/api/data')
@@ -305,6 +586,31 @@ def filter_data():
     })
 
 
+@app.route('/balance')
+@app.route('/okx_balance')
+def balance():
+    """OKX余额查询页面路由"""
+    return render_template('balance.html', now=datetime.now())
+
+
+@app.route('/api/balance')
+def api_balance():
+    """API接口，返回OKX账户余额数据"""
+    try:
+        # 获取余额数据
+        balance_data = get_okx_balance()
+        return jsonify({
+            'success': True,
+            'data': balance_data
+        })
+    except Exception as e:
+        print(f"获取余额数据时发生错误: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
 if __name__ == '__main__':
     # 获取本地IP地址
     import socket
@@ -319,7 +625,12 @@ if __name__ == '__main__':
     print('=' * 80)
     print(f'本地访问地址: http://127.0.0.1:5000')
     print(f'局域网访问地址: http://{local_ip}:5000')
-    print('请在浏览器中打开上述地址查看报告')
+    print('')
+    print('页面导航:')
+    print('  - 多时间框架分析报告: /')
+    print('  - OKX余额查询: /balance')
+    print('')
+    print('请在浏览器中打开上述地址查看报告和余额')
     print('手机查看请确保与电脑连接同一Wi-Fi网络，然后访问局域网地址')
     print('=' * 80)
     

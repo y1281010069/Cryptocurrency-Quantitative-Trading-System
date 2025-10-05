@@ -20,6 +20,17 @@ OKX_CONFIG = {
     'passphrase': PASSPHRASE,
     'sandbox': False,  # True=测试环境, False=正式环境
     'timeout': 30000,
+    'use_official_api': False,  # True=使用官方python-okx库, False=使用ccxt库
+}
+
+# 数据库配置
+DATABASE_CONFIG = {
+    'HOST': os.getenv('DB_HOST', ''),
+    'PORT': int(os.getenv('DB_PORT', 3306)),
+    'USER': os.getenv('DB_USER', ''),
+    'PASSWORD': os.getenv('DB_PASSWORD', ''),
+    'DB': os.getenv('DB_NAME', 'trade2'),
+    'CHARSET': "utf8mb4"
 }
 
 # 验证配置
