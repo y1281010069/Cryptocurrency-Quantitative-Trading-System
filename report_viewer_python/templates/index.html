@@ -218,7 +218,7 @@
             </div>
 
             <!-- 交易机会卡片容器 -->
-            <div id="opportunities-container" class="grid grid-cols-1 gap-4">
+            <div id="opportunities-container" class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {% for opportunity in report_data.opportunities %}
                     {{ create_opportunity_card(opportunity) }}
                 {% endfor %}
