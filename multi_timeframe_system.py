@@ -285,12 +285,18 @@ class MultiTimeframeProfessionalSystem:
             atr_value = calculate_atr(df_15m)
             
             # 检查是否所有时间框架都为买入或都为卖出
-            # 首先过滤掉"观望"信号
-            valid_signals = [signal for signal in signals.values() if "观望" not in signal]
+            logger.debug(f"{symbol} 原始信号组合: {signals}")
             
-            # 如果没有有效的方向信号，不能算一致
+            # 首先检查是否存在观望信号
+            has_neutral = any("观望" in signal for signal in signals.values())
+            
+            # 过滤掉"观望"信号
+            valid_signals = [signal for signal in signals.values() if "观望" not in signal]
+            logger.debug(f"{symbol} 过滤后有效信号: {valid_signals}")
+            
+            # 只有当没有观望信号且所有有效信号方向一致时，才算一致
             all_agreed = False
-            if valid_signals:
+            if not has_neutral and valid_signals:
                 # 检查所有有效信号是否方向一致
                 first_direction = "买入" if "买入" in valid_signals[0] else "卖出"
                 all_agreed = True
@@ -299,11 +305,15 @@ class MultiTimeframeProfessionalSystem:
                         all_agreed = False
                         break
             
+            logger.info(f"{symbol} all_agreed状态: {all_agreed}, 有效信号数量: {len(valid_signals)}, 存在观望信号: {has_neutral}")
+            
             # 根据是否所有时间框架一致决定使用的TARGET_MULTIPLIER
             target_multiplier = TRADING_CONFIG['TARGET_MULTIPLIER']
             if all_agreed:
                 target_multiplier *= 3  # 所有时间框架一致时，使用3倍的TARGET_MULTIPLIER
-                logger.info(f"{symbol} 所有时间框架信号一致，使用3倍盈亏比")
+                logger.info(f"{symbol} 所有时间框架信号一致且无观望信号，使用3倍盈亏比 (原始乘数: {TRADING_CONFIG['TARGET_MULTIPLIER']}, 调整后乘数: {target_multiplier})")
+            else:
+                logger.info(f"{symbol} 信号方向不一致或存在观望信号，使用标准盈亏比 (乘数: {target_multiplier})")
             
             # 根据交易方向计算ATR相关价格（做多/做空）
             if overall_action == "买入":
