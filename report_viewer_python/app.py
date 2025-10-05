@@ -90,6 +90,9 @@ def init_okx_exchange():
         except Exception as e:
             print(f"OKX交易所连接失败: {e}")
             print(f"错误类型: {type(e).__name__}")
+            # 打印更详细的错误信息
+            import traceback
+            print(f"错误堆栈:\n{traceback.format_exc()}")
             okx_exchange = None
             return False
     except Exception as e:
@@ -387,13 +390,23 @@ def get_okx_balance():
     # 如果没有成功连接到OKX或API密钥未配置，返回模拟数据
     if not okx_exchange:
         print("OKX连接状态: 未连接 - 将返回模拟数据")
+        # 尝试打印连接信息，帮助调试
+        print("当前API配置信息:")
+        print(f"- API Key存在: {bool(config.okx_api_key)}")
+        print(f"- API Secret存在: {bool(config.okx_api_secret)}")
+        print(f"- API Passphrase存在: {bool(config.okx_api_passphrase)}")
         return get_mock_balance_data()
     else:
         print("OKX连接状态: 已连接 - 尝试获取真实余额数据")
     
     try:
+        # 打印请求前的准备信息
+        print("正在准备调用OKX API获取余额数据...")
         # 获取账户余额
         balances = okx_exchange.fetch_balance()
+        # 打印原始返回数据（不包含敏感信息）
+        print(f"OKX API原始返回数据: {type(balances).__name__}")
+        print(f"返回数据包含键: {list(balances.keys())}")
         
         # 准备返回数据
         result = {
@@ -514,6 +527,17 @@ def get_okx_balance():
         return result
     except Exception as e:
         print(f"获取OKX余额数据失败: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        # 检查是否是网络错误
+        if 'NetworkError' in str(type(e).__name__):
+            print("提示: 这可能是网络连接问题或代理设置问题。")
+            print("建议检查网络连接、防火墙设置和代理配置。")
+        # 检查是否是认证错误
+        elif 'AuthenticationError' in str(type(e).__name__):
+            print("提示: 这可能是API密钥、密钥或密码错误。")
+            print("建议检查API密钥配置是否正确。")
         # 出错时返回模拟数据
         return get_mock_balance_data()
 
@@ -668,18 +692,26 @@ def balance():
 @app.route('/api/balance')
 def api_balance():
     """API接口，返回OKX账户余额数据"""
+    print("=== 收到/api/balance请求 ===")
     try:
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         # 获取余额数据
         balance_data = get_okx_balance()
+        print("余额数据获取成功")
         return jsonify({
             'success': True,
             'data': balance_data
         })
     except Exception as e:
         print(f"获取余额数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'errorType': type(e).__name__
         })
 
 
