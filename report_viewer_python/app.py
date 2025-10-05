@@ -364,47 +364,150 @@ def get_okx_balance():
         
         # 处理资产数据
         total_assets = 0.0
-        for currency, balance_info in balances.items():
-            # 跳过没有余额的资产
-            if balance_info['total'] <= 0: 
-                continue
+        
+        # 打印balances对象结构信息用于调试
+        print(f"OKX返回的余额数据类型: {type(balances).__name__}")
+        print(f"余额数据包含的键: {list(balances.keys())}")
+        
+        # 检查是否存在'info'或其他可能包含真实数据的键
+        if 'info' in balances and isinstance(balances['info'], dict):
+            print(f"余额数据info字段包含的键: {list(balances['info'].keys())}")
+        
+        # 处理资产数据
+        if isinstance(balances, dict):
+            # 检查是否有更合适的数据结构
+            if 'total' in balances and isinstance(balances['total'], dict):
+                # 如果balances['total']是一个字典，可能是另一种数据格式
+                print("检测到alternative balance format")
+                for currency, amount in balances['total'].items():
+                    # 构建balance_info字典
+                    balance_info = {
+                        'total': amount,
+                        'free': balances.get('free', {}).get(currency, 0),
+                        'used': balances.get('used', {}).get(currency, 0)
+                    }
+                    
+                    # 跳过没有余额的资产
+                    if balance_info['total'] <= 0: 
+                        continue
+                    
+                    # 继续原始处理逻辑 - 处理这个资产
+                    # 获取资产价格（如果无法获取则默认为0）
+                    try:
+                        # 获取USDT价格
+                        if currency == 'USDT':
+                            price = 1.0
+                        else:
+                            # 尝试获取交易对的最新价格
+                            try:
+                                ticker = okx_exchange.fetch_ticker(f'{currency}/USDT')
+                                price = ticker['last'] if ticker else 0.0
+                            except Exception as ticker_error:
+                                print(f"获取{currency}/USDT价格失败: {ticker_error}")
+                                price = 0.0
+                    except:
+                        price = 0.0
+                    
+                    # 计算USDT价值
+                    usdt_value = balance_info['total'] * price
+                    total_assets += usdt_value
+                    
+                    # 确定资产类型
+                    asset_type = 'crypto'
+                    if currency in ['USD', 'EUR', 'JPY', 'CNY']:
+                        asset_type = 'fiat'
+                    elif currency in ['USDT', 'BUSD', 'USDC', 'DAI']:
+                        asset_type = 'stable'
+                    
+                    # 获取资产名称
+                    asset_name = get_asset_name(currency)
+                    
+                    # 添加到资产列表
+                    result['assets'].append({
+                        'symbol': currency,
+                        'name': asset_name,
+                        'available': balance_info['free'],
+                        'frozen': balance_info['used'],
+                        'total': balance_info['total'],
+                        'usdtValue': usdt_value,
+                        'type': asset_type
+                    })
+            else:
+                # 尝试原始的数据处理方式
+                for currency, balance_info in balances.items():
+                    # 跳过特定的非资产键
+                    if currency in ['info', 'timestamp', 'datetime', 'free', 'used', 'total']:
+                        continue
+                    
+                    # 确保balance_info是字典类型且包含必要的键
+                    if not isinstance(balance_info, dict):
+                        print(f"警告: {currency}的余额信息不是字典类型，而是: {type(balance_info).__name__}")
+                        continue
+                    
+                    # 检查必要的键是否存在
+                    if 'total' not in balance_info:
+                        print(f"警告: {currency}的余额信息中缺少'total'键，可用键: {list(balance_info.keys())}")
+                        # 尝试从其他可能的键获取余额信息
+                        if 'amount' in balance_info:
+                            balance_info['total'] = balance_info['amount']
+                        elif 'balance' in balance_info:
+                            balance_info['total'] = balance_info['balance']
+                        else:
+                            continue  # 跳过无法获取余额的资产
+                    
+                    # 确保free和used键存在
+                    if 'free' not in balance_info:
+                        balance_info['free'] = balance_info['total']
+                    if 'used' not in balance_info:
+                        balance_info['used'] = 0
+                    
+                    # 跳过没有余额的资产
+                    if balance_info['total'] <= 0: 
+                        continue
+                    
+                    # 继续原始处理逻辑 - 处理这个资产
+                    # 获取资产价格（如果无法获取则默认为0）
+                    try:
+                        # 获取USDT价格
+                        if currency == 'USDT':
+                            price = 1.0
+                        else:
+                            # 尝试获取交易对的最新价格
+                            try:
+                                ticker = okx_exchange.fetch_ticker(f'{currency}/USDT')
+                                price = ticker['last'] if ticker else 0.0
+                            except Exception as ticker_error:
+                                print(f"获取{currency}/USDT价格失败: {ticker_error}")
+                                price = 0.0
+                    except:
+                        price = 0.0
+                    
+                    # 计算USDT价值
+                    usdt_value = balance_info['total'] * price
+                    total_assets += usdt_value
+                    
+                    # 确定资产类型
+                    asset_type = 'crypto'
+                    if currency in ['USD', 'EUR', 'JPY', 'CNY']:
+                        asset_type = 'fiat'
+                    elif currency in ['USDT', 'BUSD', 'USDC', 'DAI']:
+                        asset_type = 'stable'
+                    
+                    # 获取资产名称
+                    asset_name = get_asset_name(currency)
+                    
+                    # 添加到资产列表
+                    result['assets'].append({
+                        'symbol': currency,
+                        'name': asset_name,
+                        'available': balance_info['free'],
+                        'frozen': balance_info['used'],
+                        'total': balance_info['total'],
+                        'usdtValue': usdt_value,
+                        'type': asset_type
+                    })
             
-            # 获取资产价格（如果有）
-            try:
-                # 获取USDT价格，如果无法获取则默认为0
-                if currency == 'USDT':
-                    price = 1.0
-                else:
-                    # 尝试获取交易对的最新价格
-                    ticker = okx_exchange.fetch_ticker(f'{currency}/USDT')
-                    price = ticker['last'] if ticker else 0.0
-            except:
-                price = 0.0
-            
-            # 计算USDT价值
-            usdt_value = balance_info['total'] * price
-            total_assets += usdt_value
-            
-            # 确定资产类型
-            asset_type = 'crypto'
-            if currency in ['USD', 'EUR', 'JPY', 'CNY']:
-                asset_type = 'fiat'
-            elif currency in ['USDT', 'BUSD', 'USDC', 'DAI']:
-                asset_type = 'stable'
-            
-            # 获取资产名称
-            asset_name = get_asset_name(currency)
-            
-            # 添加到资产列表
-            result['assets'].append({
-                'symbol': currency,
-                'name': asset_name,
-                'available': balance_info['free'],
-                'frozen': balance_info['used'],
-                'total': balance_info['total'],
-                'usdtValue': usdt_value,
-                'type': asset_type
-            })
+
         
         # 更新总资产信息
         result['total'] = total_assets
