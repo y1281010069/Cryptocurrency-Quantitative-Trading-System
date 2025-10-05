@@ -147,43 +147,6 @@
         {% endif %}
     {% endmacro %}
     <!-- 报告摘要 -->
-    <section class="bg-card rounded-xl shadow-md p-4 mb-6">
-        <div class="flex items-center justify-between mb-3">
-            <h2 class="text-lg font-bold text-gray-800 flex items-center">
-                <i class="fa fa-dashboard mr-2 text-primary"></i>报告摘要
-            </h2>
-            <div class="flex space-x-2">
-                <div class="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">
-                    <i class="fa fa-clock-o mr-1"></i><span id="dimension">{{ report_data.timeframeDimensions }}</span>
-                </div>
-            </div>
-        </div>
-        
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <div class="bg-background rounded-lg p-3 text-center">
-                <div class="text-sm text-gray-500">总机会数</div>
-                <div class="text-xl font-bold text-primary" id="total-opportunities">{{ report_data.totalOpportunities }}</div>
-            </div>
-            <div class="bg-background rounded-lg p-3 text-center">
-                <div class="text-sm text-gray-500">买入机会</div>
-                <div class="text-xl font-bold text-success" id="buy-opportunities">{{ buy_count }}</div>
-            </div>
-            <div class="bg-background rounded-lg p-3 text-center">
-                <div class="text-sm text-gray-500">卖出机会</div>
-                <div class="text-xl font-bold text-danger" id="sell-opportunities">{{ sell_count }}</div>
-            </div>
-            <div class="bg-background rounded-lg p-3 text-center">
-                <div class="text-sm text-gray-500">观望机会</div>
-                <div class="text-xl font-bold text-warning" id="watch-opportunities">{{ watch_count }}</div>
-            </div>
-        </div>
-        
-        <div class="text-sm text-gray-500">
-            <i class="fa fa-clock-o mr-1"></i>
-            <span id="report-time">{{ report_data.analysisTime }}</span>
-        </div>
-    </section>
-
     <main class="container mx-auto px-4 py-6">
         <!-- 报告摘要 -->
         <section class="bg-card rounded-xl shadow-md p-4 mb-6">

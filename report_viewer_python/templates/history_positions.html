@@ -1,0 +1,376 @@
+{% extends "layout.html" %}
+
+{% block title %}历史仓位 - OKX历史交易{% endblock %}
+
+{% block page_title %}历史仓位管理{% endblock %}
+
+{% block styles %}
+<style>
+    .history-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .history-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    .profit-positive {
+        color: #4cc9f0;
+        font-weight: bold;
+    }
+    .profit-negative {
+        color: #f72585;
+        font-weight: bold;
+    }
+    .profit-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .profit-badge.positive {
+        background-color: #4cc9f0;
+        color: white;
+    }
+    .profit-badge.negative {
+        background-color: #f72585;
+        color: white;
+    }
+    .holding-period {
+        font-size: 0.875rem;
+        color: #64748b;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto">
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-2xl font-bold text-gray-800">OKX历史仓位</h2>
+            <div class="flex space-x-2">
+                <div class="relative">
+                    <select id="time-filter" class="appearance-none bg-white border border-gray-300 text-gray-700 py-2 pl-3 pr-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="all">全部时间</option>
+                        <option value="7days">最近7天</option>
+                        <option value="30days">最近30天</option>
+                        <option value="3months">最近3个月</option>
+                        <option value="6months">最近6个月</option>
+                        <option value="1year">最近1年</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                        <i class="fa fa-chevron-down text-xs"></i>
+                    </div>
+                </div>
+                <button id="refresh-history" class="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg transition duration-200 flex items-center">
+                    <i class="fa fa-refresh mr-2"></i>
+                    刷新
+                </button>
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <div class="flex items-center">
+                <label for="history-search" class="mr-2 text-gray-700">搜索：</label>
+                <input type="text" id="history-search" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="搜索交易对...">
+            </div>
+        </div>
+        
+        <!-- 历史交易统计 -->
+        <div id="history-summary" class="mb-6 p-4 bg-gray-50 rounded-lg hidden">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <p class="text-sm text-gray-500">总交易次数</p>
+                    <p class="text-xl font-bold" id="total-trades">--</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">总盈利 (USDT)</p>
+                    <p class="text-xl font-bold" id="total-profit">--</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">胜率</p>
+                    <p class="text-xl font-bold" id="win-rate">--</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">平均持仓时间</p>
+                    <p class="text-xl font-bold" id="avg-holding-time">--</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="history-container" class="space-y-4">
+            <!-- 历史仓位卡片将通过JavaScript动态添加 -->
+            <div class="text-center py-12 text-gray-500" id="loading-history">
+                <i class="fa fa-spinner fa-spin text-3xl mb-2"></i>
+                <p>加载历史仓位数据中...</p>
+            </div>
+            <div id="no-history" class="hidden text-center py-12 text-gray-500">
+                <i class="fa fa-history text-3xl mb-2"></i>
+                <p>暂无历史仓位记录</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 操作结果提示 -->
+<div id="toast" class="fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 z-50">
+    <div class="flex items-center">
+        <i id="toast-icon" class="mr-2 text-xl"></i>
+        <span id="toast-message"></span>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 加载历史仓位数据
+    function loadHistoryPositions() {
+        document.getElementById('loading-history').classList.remove('hidden');
+        document.getElementById('no-history').classList.add('hidden');
+        document.getElementById('history-summary').classList.add('hidden');
+        document.getElementById('history-container').querySelectorAll('.history-card').forEach(card => card.remove());
+        
+        fetch('/api/history_positions')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('loading-history').classList.add('hidden');
+                
+                if (data.success && data.data && data.data.length > 0) {
+                    const historyContainer = document.getElementById('history-container');
+                    
+                    // 计算统计数据
+                    let totalProfit = 0;
+                    let winningTrades = 0;
+                    let totalHoldingTime = 0;
+                    
+                    // 按出场时间排序（最新的在前）
+                    const sortedPositions = data.data.sort((a, b) => {
+                        const dateA = new Date(a.exit_datetime);
+                        const dateB = new Date(b.exit_datetime);
+                        return dateB - dateA;
+                    });
+                    
+                    // 根据时间过滤
+                    const timeFilter = document.getElementById('time-filter').value;
+                    let filteredPositions = sortedPositions;
+                    
+                    if (timeFilter !== 'all') {
+                        const now = new Date();
+                        let filterDate = new Date();
+                        
+                        switch(timeFilter) {
+                            case '7days':
+                                filterDate.setDate(now.getDate() - 7);
+                                break;
+                            case '30days':
+                                filterDate.setDate(now.getDate() - 30);
+                                break;
+                            case '3months':
+                                filterDate.setMonth(now.getMonth() - 3);
+                                break;
+                            case '6months':
+                                filterDate.setMonth(now.getMonth() - 6);
+                                break;
+                            case '1year':
+                                filterDate.setFullYear(now.getFullYear() - 1);
+                                break;
+                        }
+                        
+                        filteredPositions = sortedPositions.filter(position => {
+                            const exitDate = new Date(position.exit_datetime);
+                            return exitDate >= filterDate;
+                        });
+                    }
+                    
+                    filteredPositions.forEach(position => {
+                        // 计算持仓时间
+                        const entryDate = new Date(position.entry_datetime);
+                        const exitDate = new Date(position.exit_datetime);
+                        const holdingTimeMs = exitDate - entryDate;
+                        
+                        totalProfit += position.profit;
+                        if (position.profit > 0) winningTrades++;
+                        totalHoldingTime += holdingTimeMs;
+                        
+                        // 添加持仓时间信息到position对象
+                        position.holdingTime = formatHoldingTime(holdingTimeMs);
+                        
+                        const historyCard = createHistoryCard(position);
+                        historyContainer.appendChild(historyCard);
+                    });
+                    
+                    // 更新统计信息
+                    const totalTrades = filteredPositions.length;
+                    const winRate = totalTrades > 0 ? (winningTrades / totalTrades * 100) : 0;
+                    const avgHoldingTimeMs = totalTrades > 0 ? (totalHoldingTime / totalTrades) : 0;
+                    const avgHoldingTime = formatHoldingTime(avgHoldingTimeMs);
+                    
+                    document.getElementById('total-trades').textContent = totalTrades;
+                    document.getElementById('total-profit').textContent = totalProfit.toFixed(2);
+                    document.getElementById('total-profit').className = `text-xl font-bold ${totalProfit >= 0 ? 'profit-positive' : 'profit-negative'}`;
+                    document.getElementById('win-rate').textContent = winRate.toFixed(1) + '%';
+                    document.getElementById('avg-holding-time').textContent = avgHoldingTime;
+                    
+                    document.getElementById('history-summary').classList.remove('hidden');
+                } else {
+                    document.getElementById('no-history').classList.remove('hidden');
+                }
+                
+                // 应用搜索过滤
+                applySearch();
+            })
+            .catch(error => {
+                console.error('加载历史仓位数据失败:', error);
+                document.getElementById('loading-history').classList.add('hidden');
+                document.getElementById('no-history').classList.remove('hidden');
+                showToast('加载历史仓位数据失败', 'error');
+            });
+    }
+    
+    // 创建历史仓位卡片
+    function createHistoryCard(position) {
+        const card = document.createElement('div');
+        card.className = 'history-card p-4 border rounded-lg';
+        
+        const isProfitPositive = position.profit >= 0;
+        const profitClass = isProfitPositive ? 'profit-positive' : 'profit-negative';
+        const profitBadgeClass = isProfitPositive ? 'profit-badge positive' : 'profit-badge negative';
+        const profitBadgeIcon = isProfitPositive ? 'fa-arrow-up' : 'fa-arrow-down';
+        
+        card.innerHTML = `
+            <div class="flex justify-between items-start mb-2">
+                <div class="flex items-center">
+                    <h3 class="font-bold text-lg mr-2">${position.symbol}</h3>
+                    <span class="px-2 py-1 text-xs bg-primary/10 text-primary rounded-full">${position.type}</span>
+                </div>
+                <div class="flex items-center">
+                    <span class="${profitBadgeClass} mr-2 flex items-center">
+                        <i class="fa ${profitBadgeIcon} mr-1"></i>
+                        ${position.profit_percent.toFixed(2)}%
+                    </span>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <p class="text-sm text-gray-500">入场时间</p>
+                    <p class="font-semibold">${position.entry_datetime}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">出场时间</p>
+                    <p class="font-semibold">${position.exit_datetime}</p>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
+                <div>
+                    <p class="text-sm text-gray-500">持仓数量</p>
+                    <p class="font-semibold">${position.amount.toFixed(6)}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">入场价格</p>
+                    <p class="font-semibold">${position.entry_price.toFixed(6)}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">出场价格</p>
+                    <p class="font-semibold">${position.exit_price.toFixed(6)}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">持仓市值 (USDT)</p>
+                    <p class="font-semibold">${(position.amount * position.entry_price).toFixed(2)}</p>
+                </div>
+            </div>
+            
+            <div class="flex justify-between items-center">
+                <div class="holding-period">
+                    <i class="fa fa-clock-o mr-1"></i> 持仓时间: ${position.holdingTime}
+                </div>
+                <div>
+                    <p class="text-xl font-bold ${profitClass}">盈亏: ${position.profit.toFixed(2)} USDT</p>
+                </div>
+            </div>
+        `;
+        
+        return card;
+    }
+    
+    // 格式化持仓时间
+    function formatHoldingTime(milliseconds) {
+        const seconds = Math.floor(milliseconds / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+        
+        if (days > 0) {
+            return `${days}天 ${hours % 24}小时`;
+        } else if (hours > 0) {
+            return `${hours}小时 ${minutes % 60}分钟`;
+        } else if (minutes > 0) {
+            return `${minutes}分钟 ${seconds % 60}秒`;
+        } else {
+            return `${seconds}秒`;
+        }
+    }
+    
+    // 显示提示信息
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        const toastIcon = document.getElementById('toast-icon');
+        const toastMessage = document.getElementById('toast-message');
+        
+        // 设置提示样式和图标
+        if (type === 'success') {
+            toast.className = 'fixed top-4 right-4 px-6 py-3 bg-success/10 text-success rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 z-50';
+            toastIcon.className = 'fa fa-check-circle mr-2 text-xl';
+        } else if (type === 'error') {
+            toast.className = 'fixed top-4 right-4 px-6 py-3 bg-danger/10 text-danger rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 z-50';
+            toastIcon.className = 'fa fa-times-circle mr-2 text-xl';
+        } else {
+            toast.className = 'fixed top-4 right-4 px-6 py-3 bg-primary/10 text-primary rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 z-50';
+            toastIcon.className = 'fa fa-info-circle mr-2 text-xl';
+        }
+        
+        // 设置提示信息
+        toastMessage.textContent = message;
+        
+        // 显示提示
+        setTimeout(() => {
+            toast.style.transform = 'translateX(0)';
+        }, 10);
+        
+        // 3秒后自动隐藏
+        setTimeout(() => {
+            toast.style.transform = 'translateX(calc(100% + 1rem))';
+        }, 3000);
+    }
+    
+    // 应用搜索过滤
+    function applySearch() {
+        const searchTerm = document.getElementById('history-search').value.toLowerCase().trim();
+        const historyCards = document.querySelectorAll('.history-card');
+        
+        historyCards.forEach(card => {
+            const symbol = card.querySelector('h3').textContent.toLowerCase();
+            if (symbol.includes(searchTerm) || searchTerm === '') {
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    }
+    
+    // 添加事件监听器
+    document.addEventListener('DOMContentLoaded', () => {
+        // 加载历史仓位数据
+        loadHistoryPositions();
+        
+        // 刷新按钮事件
+        document.getElementById('refresh-history').addEventListener('click', loadHistoryPositions);
+        
+        // 时间过滤事件
+        document.getElementById('time-filter').addEventListener('change', loadHistoryPositions);
+        
+        // 搜索框事件
+        document.getElementById('history-search').addEventListener('input', applySearch);
+    });
+</script>
+{% endblock %}

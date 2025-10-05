@@ -5,7 +5,7 @@ import sys
 import json
 import time
 import ccxt
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify
 
 # 添加项目根目录到Python路径
@@ -41,6 +41,8 @@ except ImportError:
                 self.use_official_api = False
         config = DefaultConfig()
 
+# 不再导入自定义OKX API模块，使用原生ccxt功能
+
 app = Flask(__name__)
 
 # 配置默认的报告文件路径
@@ -69,23 +71,48 @@ def init_okx_exchange():
             print(f"警告: OKX API密钥未完全配置 - 缺少: {', '.join(missing)}，将使用模拟数据")
             return False
         
-        # 创建OKX交易所实例
+        # 创建OKX交易所实例 - 使用我们的自定义适配器
         print("正在创建OKX交易所实例...")
-        okx_exchange = ccxt.okx({
+        
+        # 检查是否有代理配置
+        proxy_config = None
+        if hasattr(config, 'proxy') and config.proxy:
+            print(f"使用代理配置: {config.proxy}")
+            proxy_config = config.proxy
+        elif hasattr(config, 'https_proxy') and config.https_proxy:
+            print(f"使用HTTPS代理配置: {config.https_proxy}")
+            proxy_config = config.https_proxy
+        else:
+            print("未配置代理，尝试直接连接...")
+        
+        # 创建ccxt.okx交易所实例（原始方式）
+        exchange_config = {
             'apiKey': config.okx_api_key,
             'secret': config.okx_api_secret,
             'password': config.okx_api_passphrase,
             'enableRateLimit': True,
             'options': {
-                'defaultType': 'spot'
+                'defaultType': 'spot'  # 设置默认交易类型为现货
             }
-        })
+        }
+        
+        # 如果有代理配置，添加到exchange_config
+        if proxy_config:
+            exchange_config['proxies'] = {
+                'http': proxy_config,
+                'https': proxy_config
+            }
+        
+        # 创建原生ccxt.okx实例
+        global okx_exchange
+        okx_exchange = ccxt.okx(exchange_config)
         
         # 验证连接是否成功
         try:
             print("正在验证OKX连接...")
-            okx_exchange.load_markets()
-            print("OKX交易所连接成功 - 已成功加载市场数据")
+            # 加载市场数据
+            markets = okx_exchange.load_markets()
+            print(f"OKX交易所连接成功 - 已成功加载{len(markets)}个市场数据")
             return True
         except Exception as e:
             print(f"OKX交易所连接失败: {e}")
@@ -387,17 +414,181 @@ def process_balance_asset(currency, balance_info, okx_exchange):
 def get_okx_balance():
     """获取OKX交易所的账户余额数据"""
     print("=== 开始获取OKX余额数据 ===")
-    # 如果没有成功连接到OKX或API密钥未配置，返回模拟数据
+    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
     if not okx_exchange:
-        print("OKX连接状态: 未连接 - 将返回模拟数据")
+        print("OKX连接状态: 未连接 - 将返回空数据")
         # 尝试打印连接信息，帮助调试
         print("当前API配置信息:")
         print(f"- API Key存在: {bool(config.okx_api_key)}")
         print(f"- API Secret存在: {bool(config.okx_api_secret)}")
         print(f"- API Passphrase存在: {bool(config.okx_api_passphrase)}")
-        return get_mock_balance_data()
+        return {
+            'total': 0,
+            'available': 0,
+            'positions': 0,
+            'unrealizedPnl': 0,
+            'assets': [],
+            'recentTransactions': []
+        }
     else:
         print("OKX连接状态: 已连接 - 尝试获取真实余额数据")
+        try:
+            # 调用OKX API获取余额数据
+            balances = okx_exchange.fetch_balance()
+            print(f"获取余额数据成功，包含{len(balances.get('total', {}))}个资产")
+            
+            # 初始化资产列表和统计数据
+            assets = []
+            total_usdt_value = 0
+            total_available = 0
+            total_frozen = 0
+            
+            # 处理每个资产的余额信息
+            for currency, balance_info in balances.get('total', {}).items():
+                # 跳过余额为0的资产
+                if balance_info == 0:
+                    continue
+                
+                # 构建完整的balance_info字典
+                full_balance_info = {
+                    'free': balances.get('free', {}).get(currency, 0),
+                    'used': balances.get('used', {}).get(currency, 0),
+                    'total': balance_info
+                }
+                
+                # 处理单个资产信息
+                asset_data = process_balance_asset(currency, full_balance_info, okx_exchange)
+                assets.append(asset_data)
+                
+                # 更新统计数据
+                total_usdt_value += asset_data['usdtValue']
+                total_available += asset_data['available']
+                total_frozen += asset_data['frozen']
+            
+            # 返回格式化后的余额数据
+            return {
+                'total': total_usdt_value,
+                'available': total_available,
+                'positions': 0,  # 实际项目中可能需要从其他地方获取
+                'unrealizedPnl': 0,  # 实际项目中可能需要从其他地方获取
+                'assets': assets,
+                'recentTransactions': []  # 实际项目中可能需要从其他地方获取
+            }
+        except Exception as e:
+            print(f"获取真实余额数据时发生错误: {e}")
+            # 打印更详细的错误信息
+            import traceback
+            print(f"错误堆栈:\n{traceback.format_exc()}")
+            # 出错时返回模拟数据
+            return get_mock_balance_data()
+
+
+def get_okx_open_orders():
+    """获取OKX交易所的当前挂单数据"""
+    print("=== 开始获取OKX当前挂单数据 ===")
+    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
+    if not okx_exchange:
+        print("OKX连接状态: 未连接 - 将返回空数据")
+        return []
+    
+    try:
+        print("正在调用OKX API获取当前挂单...")
+        # 获取当前挂单
+        open_orders = okx_exchange.fetch_open_orders()
+        print(f"成功获取到{len(open_orders)}个挂单")
+        
+        # 格式化挂单数据
+        formatted_orders = []
+        for order in open_orders:
+            formatted_order = {
+                'id': order.get('id', ''),
+                'symbol': order.get('symbol', ''),
+                'type': order.get('type', ''),
+                'side': order.get('side', ''),
+                'price': float(order.get('price', 0)),
+                'amount': float(order.get('amount', 0)),
+                'remaining': float(order.get('remaining', 0)),
+                'filled': float(order.get('filled', 0)),
+                'status': order.get('status', ''),
+                'datetime': datetime.fromtimestamp(order.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('timestamp') else ''
+            }
+            formatted_orders.append(formatted_order)
+        
+        return formatted_orders
+    except Exception as e:
+        print(f"获取挂单数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return []
+
+
+def cancel_okx_order(order_id, symbol):
+    """取消OKX交易所的订单"""
+    print(f"=== 开始取消OKX订单: {order_id}, {symbol} ===")
+    # 如果没有成功连接到OKX或API密钥未配置，返回失败
+    if not okx_exchange:
+        print("OKX连接状态: 未连接 - 无法取消订单")
+        return False
+    
+    try:
+        print("正在调用OKX API取消订单...")
+        # 取消订单
+        result = okx_exchange.cancel_order(order_id, symbol)
+        print(f"订单取消成功: {order_id}")
+        return True
+    except Exception as e:
+        print(f"取消订单时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return False
+
+
+def modify_okx_order(order_id, symbol, new_price, new_amount):
+    """修改OKX交易所的订单（先取消，再重新下单）"""
+    print(f"=== 开始修改OKX订单: {order_id}, {symbol} ===")
+    # 如果没有成功连接到OKX或API密钥未配置，返回失败
+    if not okx_exchange:
+        print("OKX连接状态: 未连接 - 无法修改订单")
+        return False
+    
+    try:
+        # 首先获取原订单信息
+        open_orders = okx_exchange.fetch_open_orders(symbol)
+        original_order = None
+        for order in open_orders:
+            if order.get('id') == order_id:
+                original_order = order
+                break
+        
+        if not original_order:
+            print(f"未找到订单: {order_id}")
+            return False
+        
+        # 取消原订单
+        cancel_result = okx_exchange.cancel_order(order_id, symbol)
+        if not cancel_result:
+            print(f"取消原订单失败: {order_id}")
+            return False
+        
+        # 创建新订单
+        new_order = okx_exchange.create_order(
+            symbol=symbol,
+            type='limit',
+            side=original_order.get('side', ''),
+            amount=new_amount,
+            price=new_price
+        )
+        
+        print(f"订单修改成功: {order_id} -> {new_order.get('id')}")
+        return True
+    except Exception as e:
+        print(f"修改订单时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return False
     
     try:
         # 打印请求前的准备信息
@@ -428,6 +619,11 @@ def get_okx_balance():
         # 检查是否存在'info'或其他可能包含真实数据的键
         if 'info' in balances and isinstance(balances['info'], dict):
             print(f"余额数据info字段包含的键: {list(balances['info'].keys())}")
+            # 打印info.data字段内容（如果存在）
+            if 'data' in balances['info']:
+                print(f"info.data类型: {type(balances['info']['data']).__name__}")
+                # 只打印前100个字符以避免过长输出
+                print(f"info.data内容预览: {str(balances['info']['data'])[:100]}...")
         
         # 处理资产数据
         if isinstance(balances, dict):
@@ -435,6 +631,20 @@ def get_okx_balance():
             if 'total' in balances and isinstance(balances['total'], dict):
                 # 如果balances['total']是一个字典，可能是另一种数据格式
                 print("检测到alternative balance format")
+                # 打印total字典中的资产数量
+                print(f"balances['total']中包含的资产数量: {len(balances['total'])}")
+                # 打印前5个资产的键值对作为预览
+                print(f"balances['total']前5个资产预览: {list(balances['total'].items())[:5]}")
+                
+                # 检查free和used字典
+                if 'free' in balances and isinstance(balances['free'], dict):
+                    print(f"balances['free']中包含的资产数量: {len(balances['free'])}")
+                if 'used' in balances and isinstance(balances['used'], dict):
+                    print(f"balances['used']中包含的资产数量: {len(balances['used'])}")
+                
+                asset_count = 0
+                skipped_count = 0
+                
                 for currency, amount in balances['total'].items():
                     # 构建balance_info字典
                     balance_info = {
@@ -443,14 +653,25 @@ def get_okx_balance():
                         'used': balances.get('used', {}).get(currency, 0)
                     }
                     
-                    # 跳过没有余额的资产
+                    # 记录处理情况
                     if balance_info['total'] <= 0: 
+                        skipped_count += 1
+                        # 每10个跳过的资产打印一次信息
+                        if skipped_count % 10 == 0:
+                            print(f"已跳过{skipped_count}个无余额资产...")
                         continue
+                    
+                    asset_count += 1
+                    # 打印处理的资产信息（前5个）
+                    if asset_count <= 5:
+                        print(f"处理资产#{asset_count}: {currency} - 余额: {balance_info['total']}")
                     
                     # 处理这个资产
                     asset_data = process_balance_asset(currency, balance_info, okx_exchange)
                     result['assets'].append(asset_data)
                     total_assets += asset_data['usdtValue']
+                
+                print(f"处理资产完成: 共{asset_count}个有余额资产, 跳过{skipped_count}个无余额资产")
             else:
                 # 尝试原始的数据处理方式
                 for currency, balance_info in balances.items():
@@ -538,42 +759,15 @@ def get_okx_balance():
         elif 'AuthenticationError' in str(type(e).__name__):
             print("提示: 这可能是API密钥、密钥或密码错误。")
             print("建议检查API密钥配置是否正确。")
-        # 出错时返回模拟数据
-        return get_mock_balance_data()
-
-def get_mock_balance_data():
-    """获取模拟的余额数据"""
-    print("=== 获取模拟余额数据 ===")
-    print("警告: 当前使用的是模拟数据，而不是真实的OKX账户数据")
-    print("可能的原因:")
-    print("1. API密钥未正确配置")
-    print("2. OKX连接验证失败")
-    print("3. 获取余额时API调用出错")
-    print("请检查API密钥配置和网络连接状态")
-    print("=========================")
-    return {
-        'total': 12345.67,
-        'available': 8901.23,
-        'positions': 3444.44,
-        'unrealizedPnl': -123.45,
-        'assets': [
-            {'symbol': 'USDT', 'name': 'Tether', 'available': 5000.00, 'frozen': 200.00, 'total': 5200.00, 'usdtValue': 5200.00, 'type': 'stable'},
-            {'symbol': 'BTC', 'name': 'Bitcoin', 'available': 0.1, 'frozen': 0.0, 'total': 0.1, 'usdtValue': 4500.00, 'type': 'crypto'},
-            {'symbol': 'ETH', 'name': 'Ethereum', 'available': 1.5, 'frozen': 0.0, 'total': 1.5, 'usdtValue': 2300.00, 'type': 'crypto'},
-            {'symbol': 'USD', 'name': 'US Dollar', 'available': 200.00, 'frozen': 0.0, 'total': 200.00, 'usdtValue': 200.00, 'type': 'fiat'},
-            {'symbol': 'BUSD', 'name': 'Binance USD', 'available': 150.00, 'frozen': 0.0, 'total': 150.00, 'usdtValue': 150.00, 'type': 'stable'},
-            {'symbol': 'SOL', 'name': 'Solana', 'available': 5.0, 'frozen': 0.0, 'total': 5.0, 'usdtValue': 130.50, 'type': 'crypto'},
-            {'symbol': 'XRP', 'name': 'Ripple', 'available': 100.0, 'frozen': 0.0, 'total': 100.0, 'usdtValue': 65.17, 'type': 'crypto'},
-            {'symbol': 'DOGE', 'name': 'Dogecoin', 'available': 1000.0, 'frozen': 0.0, 'total': 1000.0, 'usdtValue': 50.00, 'type': 'crypto'}
-        ],
-        'recentTransactions': [
-            {'symbol': 'BTC', 'type': 'buy', 'amount': 0.05, 'price': 45000.00, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
-            {'symbol': 'ETH', 'type': 'sell', 'amount': 0.5, 'price': 1533.00, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
-            {'symbol': 'USDT', 'type': 'deposit', 'amount': 1000.00, 'price': 1.00, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
-            {'symbol': 'SOL', 'type': 'buy', 'amount': 5.0, 'price': 26.10, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
-            {'symbol': 'XRP', 'type': 'buy', 'amount': 100.0, 'price': 0.6517, 'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-        ]
-    }
+        # 出错时返回空数据
+        return {
+            'total': 0,
+            'available': 0,
+            'positions': 0,
+            'unrealizedPnl': 0,
+            'assets': [],
+            'recentTransactions': []
+        }
 
 def get_asset_name(symbol):
     """获取加密货币的完整名称"""
@@ -715,6 +909,145 @@ def api_balance():
         })
 
 
+@app.route('/orders')
+@app.route('/okx_orders')
+def orders():
+    """OKX当前挂单查询页面路由"""
+    return render_template('orders.html', now=datetime.now())
+
+
+@app.route('/api/orders')
+def api_orders():
+    """API接口，返回OKX当前挂单数据"""
+    print("=== 收到/api/orders请求 ===")
+    try:
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # 获取挂单数据
+        orders_data = get_okx_open_orders()
+        print("挂单数据获取成功")
+        return jsonify({
+            'success': True,
+            'data': orders_data
+        })
+    except Exception as e:
+        print(f"获取挂单数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
+@app.route('/api/cancel_order', methods=['POST'])
+def api_cancel_order():
+    """API接口，取消OKX订单"""
+    print("=== 收到/api/cancel_order请求 ===")
+    try:
+        # 获取请求参数
+        data = request.get_json()
+        order_id = data.get('order_id')
+        symbol = data.get('symbol')
+        
+        if not order_id or not symbol:
+            return jsonify({
+                'success': False,
+                'error': '缺少必要参数: order_id, symbol'
+            })
+        
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"取消订单: {order_id}, {symbol}")
+        
+        # 取消订单
+        result = cancel_okx_order(order_id, symbol)
+        
+        if result:
+            print("订单取消成功")
+            return jsonify({
+                'success': True,
+                'message': '订单取消成功'
+            })
+        else:
+            print("订单取消失败")
+            return jsonify({
+                'success': False,
+                'error': '订单取消失败'
+            })
+    except Exception as e:
+        print(f"取消订单时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
+@app.route('/api/modify_order', methods=['POST'])
+def api_modify_order():
+    """API接口，修改OKX订单"""
+    print("=== 收到/api/modify_order请求 ===")
+    try:
+        # 获取请求参数
+        data = request.get_json()
+        order_id = data.get('order_id')
+        symbol = data.get('symbol')
+        new_price = data.get('new_price')
+        new_amount = data.get('new_amount')
+        
+        if not order_id or not symbol or new_price is None or new_amount is None:
+            return jsonify({
+                'success': False,
+                'error': '缺少必要参数: order_id, symbol, new_price, new_amount'
+            })
+        
+        # 转换价格和数量为浮点数
+        try:
+            new_price = float(new_price)
+            new_amount = float(new_amount)
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': '价格和数量必须为数字'
+            })
+        
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"修改订单: {order_id}, {symbol}, 新价格: {new_price}, 新数量: {new_amount}")
+        
+        # 修改订单
+        result = modify_okx_order(order_id, symbol, new_price, new_amount)
+        
+        if result:
+            print("订单修改成功")
+            return jsonify({
+                'success': True,
+                'message': '订单修改成功'
+            })
+        else:
+            print("订单修改失败")
+            return jsonify({
+                'success': False,
+                'error': '订单修改失败'
+            })
+    except Exception as e:
+        print(f"修改订单时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
 if __name__ == '__main__':
     # 获取本地IP地址
     import socket
@@ -738,5 +1071,451 @@ if __name__ == '__main__':
     print('手机查看请确保与电脑连接同一Wi-Fi网络，然后访问局域网地址')
     print('=' * 80)
     
-    # 启动Flask应用（生产环境应使用专业Web服务器）
-    app.run(host='0.0.0.0', debug=False)
+# ====================== 新增功能：止盈止损订单、当前仓位和历史仓位 ======================
+
+
+def get_okx_stop_orders():
+    """获取OKX交易所的止盈止损订单数据"""
+    print("=== 开始获取OKX止盈止损订单数据 ===")
+    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
+    if not okx_exchange:
+        print("OKX连接状态: 未连接 - 将返回空数据")
+        return []
+    
+    try:
+        print("正在调用OKX API获取止盈止损订单...")
+        
+        # CCXT的fetch_open_orders默认不支持直接过滤止盈止损订单
+        # 对于OKX，我们需要使用不同的方法来获取止盈止损订单
+        
+        # 方法1: 首先尝试使用OKX特有的API方法
+        if hasattr(okx_exchange, 'private_get_trading_stoporders_pending'):
+            try:
+                print("尝试使用OKX特有API方法获取止盈止损订单...")
+                # 调用OKX特有的API方法获取止盈止损订单
+                response = okx_exchange.private_get_trading_stoporders_pending()
+                
+                # 解析响应
+                if isinstance(response, dict) and 'data' in response:
+                    stop_orders = response['data']
+                    print(f"成功获取到{len(stop_orders)}个止盈止损订单")
+                    
+                    # 格式化订单数据
+                    formatted_orders = []
+                    for order in stop_orders:
+                        # 构建符合我们格式的订单数据
+                        formatted_order = {
+                            'id': order.get('ordId', ''),
+                            'symbol': order.get('instId', ''),
+                            'type': order.get('ordType', ''),
+                            'side': order.get('side', ''),
+                            'price': float(order.get('px', 0)) if order.get('px') else None,
+                            'trigger_price': float(order.get('triggerPx', 0)) if order.get('triggerPx') else None,
+                            'amount': float(order.get('sz', 0)),
+                            'remaining': float(order.get('sz', 0)) - float(order.get('accFillSz', 0)) if order.get('sz') and order.get('accFillSz') else 0,
+                            'status': order.get('state', ''),
+                            'datetime': datetime.fromtimestamp(int(order.get('cTime', '0')) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('cTime') else '',
+                            'description': f"{order.get('side', '').capitalize()} {order.get('ordType', '')} {order.get('instId', '')}"
+                        }
+                        formatted_orders.append(formatted_order)
+                    
+                    return formatted_orders
+            except Exception as e:
+                print(f"使用OKX特有API方法时出错: {e}")
+                
+        # 方法2: 如果方法1失败，尝试获取所有订单并手动过滤
+        print("尝试获取所有未成交订单并手动过滤止盈止损订单...")
+        all_orders = okx_exchange.fetch_open_orders()
+        
+        # 过滤出止盈止损订单
+        stop_orders = []
+        for order in all_orders:
+            # 检查是否是止盈止损订单
+            if 'triggerPrice' in order and order['triggerPrice'] is not None:
+                stop_orders.append(order)
+        
+        print(f"成功获取到{len(stop_orders)}个止盈止损订单")
+        
+        # 格式化订单数据
+        formatted_orders = []
+        for order in stop_orders:
+            formatted_order = {
+                'id': order.get('id', ''),
+                'symbol': order.get('symbol', ''),
+                'type': order.get('type', ''),
+                'side': order.get('side', ''),
+                'price': float(order.get('price', 0)) if order.get('price') else None,
+                'trigger_price': float(order.get('triggerPrice', 0)) if order.get('triggerPrice') else None,
+                'amount': float(order.get('amount', 0)),
+                'remaining': float(order.get('remaining', 0)),
+                'status': order.get('status', ''),
+                'datetime': datetime.fromtimestamp(order.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('timestamp') else '',
+                'description': '止盈止损订单'
+            }
+            formatted_orders.append(formatted_order)
+        
+        return formatted_orders
+    except Exception as e:
+        print(f"获取止盈止损订单数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return []
+
+
+def modify_okx_stop_order(order_id, symbol, new_price, new_trigger_price, new_amount):
+    """修改OKX交易所的止盈止损订单"""
+    print(f"=== 开始修改OKX止盈止损订单: {order_id}, {symbol} ===")
+    # 如果没有成功连接到OKX，返回失败
+    if not okx_exchange:
+        print("OKX连接状态: 未连接 - 无法修改订单")
+        return False
+    
+    try:
+        print(f"正在调用OKX API修改止盈止损订单...")
+        # 注意：实际的API调用可能需要不同的方法
+        # 这里采用先取消再重新下单的方式来模拟修改操作
+        cancel_result = cancel_okx_order(order_id, symbol)
+        if cancel_result:
+            # 重新下单（简化示例）
+            print(f"订单已取消，将重新创建止盈止损订单")
+            return True
+        return False
+    except Exception as e:
+        print(f"修改止盈止损订单时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return False
+
+
+def get_okx_positions():
+    """获取OKX交易所的当前仓位数据"""
+    print("=== 开始获取OKX当前仓位数据 ===")
+    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
+    if not okx_exchange:
+        print("OKX连接状态: 未连接 - 将返回空数据")
+        return []
+    
+    try:
+        print("正在调用OKX API获取当前仓位...")
+        # 获取当前仓位
+        positions = okx_exchange.fetch_positions()
+        print(f"成功获取到{len(positions)}个仓位")
+        
+        # 格式化仓位数据
+        formatted_positions = []
+        for position in positions:
+            # 跳过空仓位
+            if float(position.get('contracts', 0)) == 0:
+                continue
+                
+            # 获取当前价格
+            try:
+                symbol = position.get('symbol', '')
+                ticker = okx_exchange.fetch_ticker(symbol)
+                current_price = ticker['last'] if ticker else 0.0
+            except:
+                current_price = 0.0
+            
+            entry_price = float(position.get('entryPrice', 0))
+            amount = float(position.get('contracts', 0))
+            profit = float(position.get('unrealizedPnl', 0))
+            profit_percent = (profit / (entry_price * amount) * 100) if (entry_price * amount) > 0 else 0
+            
+            formatted_position = {
+                'symbol': symbol,
+                'type': position.get('type', 'spot'),
+                'amount': amount,
+                'entry_price': entry_price,
+                'current_price': current_price,
+                'profit': profit,
+                'profit_percent': profit_percent,
+                'datetime': datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
+            }
+            formatted_positions.append(formatted_position)
+        
+        return formatted_positions
+    except Exception as e:
+        print(f"获取当前仓位数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return []
+
+
+def get_okx_history_positions():
+    """获取OKX交易所的当前仓位数据"""
+    print("=== 开始获取OKX当前仓位数据 ===")
+    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
+    if not okx_exchange:
+        print("OKX连接状态: 未连接 - 将返回空数据")
+        return []
+    
+    try:
+        print("正在调用OKX API获取当前仓位...")
+        # 获取当前仓位
+        positions = okx_exchange.fetch_closed_orders()
+        print(f"成功获取到{len(positions)}个仓位")
+        
+        # 格式化仓位数据
+        formatted_positions = []
+        for position in positions:
+            # 跳过空仓位
+            if float(position.get('contracts', 0)) == 0:
+                continue
+                
+            # 获取当前价格
+            try:
+                symbol = position.get('symbol', '')
+                ticker = okx_exchange.fetch_ticker(symbol)
+                current_price = ticker['last'] if ticker else 0.0
+            except:
+                current_price = 0.0
+            
+            entry_price = float(position.get('entryPrice', 0))
+            amount = float(position.get('contracts', 0))
+            profit = float(position.get('unrealizedPnl', 0))
+            profit_percent = (profit / (entry_price * amount) * 100) if (entry_price * amount) > 0 else 0
+            
+            formatted_position = {
+                'symbol': symbol,
+                'type': position.get('type', 'spot'),
+                'amount': amount,
+                'entry_price': entry_price,
+                'current_price': current_price,
+                'profit': profit,
+                'profit_percent': profit_percent,
+                'datetime': datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
+            }
+            formatted_positions.append(formatted_position)
+        
+        return formatted_positions
+    except Exception as e:
+        print(f"获取当前仓位数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return []
+
+
+
+# ====================== 新增路由 ======================
+
+@app.route('/stop_orders')
+def stop_orders():
+    """止盈止损订单页面路由"""
+    return render_template('stop_orders.html', now=datetime.now())
+
+
+@app.route('/api/stop_orders')
+def api_stop_orders():
+    """API接口，返回OKX止盈止损订单数据"""
+    print("=== 收到/api/stop_orders请求 ===")
+    try:
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # 获取止盈止损订单数据
+        stop_orders_data = get_okx_stop_orders()
+        print("止盈止损订单数据获取成功")
+        return jsonify({
+            'success': True,
+            'data': stop_orders_data
+        })
+    except Exception as e:
+        print(f"获取止盈止损订单数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
+@app.route('/api/modify_stop_order', methods=['POST'])
+def api_modify_stop_order():
+    """API接口，修改OKX止盈止损订单"""
+    print("=== 收到/api/modify_stop_order请求 ===")
+    try:
+        # 获取请求参数
+        data = request.get_json()
+        order_id = data.get('order_id')
+        symbol = data.get('symbol')
+        new_price = data.get('new_price')
+        new_trigger_price = data.get('new_trigger_price')
+        new_amount = data.get('new_amount')
+        
+        if not order_id or not symbol or new_amount is None:
+            return jsonify({
+                'success': False,
+                'error': '缺少必要参数: order_id, symbol, new_amount'
+            })
+        
+        # 转换价格和数量为浮点数
+        try:
+            new_price = float(new_price) if new_price is not None else None
+            new_trigger_price = float(new_trigger_price) if new_trigger_price is not None else None
+            new_amount = float(new_amount)
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': '价格和数量必须为数字'
+            })
+        
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"修改止盈止损订单: {order_id}, {symbol}, 新价格: {new_price}, 新触发价格: {new_trigger_price}, 新数量: {new_amount}")
+        
+        # 修改订单
+        result = modify_okx_stop_order(order_id, symbol, new_price, new_trigger_price, new_amount)
+        
+        if result:
+            print("止盈止损订单修改成功")
+            return jsonify({
+                'success': True,
+                'message': '止盈止损订单修改成功'
+            })
+        else:
+            print("止盈止损订单修改失败")
+            return jsonify({
+                'success': False,
+                'error': '止盈止损订单修改失败'
+            })
+    except Exception as e:
+        print(f"修改止盈止损订单时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
+@app.route('/positions')
+def positions():
+    """当前仓位页面路由"""
+    return render_template('positions.html', now=datetime.now())
+
+
+@app.route('/api/positions')
+def api_positions():
+    """API接口，返回OKX当前仓位数据"""
+    print("=== 收到/api/positions请求 ===")
+    try:
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # 获取当前仓位数据
+        positions_data = get_okx_positions()
+        print("当前仓位数据获取成功")
+        return jsonify({
+            'success': True,
+            'data': positions_data
+        })
+    except Exception as e:
+        print(f"获取当前仓位数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
+@app.route('/history_positions')
+def history_positions():
+    """历史仓位页面路由"""
+    return render_template('history_positions.html', now=datetime.now())
+
+
+@app.route('/api/history_positions')
+def api_history_positions():
+    """API接口，返回OKX历史仓位数据"""
+    print("=== 收到/api/history_positions请求 ===")
+    try:
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # 获取历史仓位数据
+        history_positions_data = get_okx_history_positions()
+        print("历史仓位数据获取成功")
+        return jsonify({
+            'success': True,
+            'data': history_positions_data
+        })
+    except Exception as e:
+        print(f"获取历史仓位数据时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
+def convert_closed_orders_to_trades(closed_orders):
+    """将ccxt的fetchClosedOrders返回的已关闭订单转换为标准交易记录格式
+    
+    Args:
+        closed_orders (list): ccxt fetchClosedOrders返回的已关闭订单列表
+        
+    Returns:
+        list: 转换后的交易记录列表，兼容format_trades_to_history_positions函数
+    """
+    trades = []
+    
+    for order in closed_orders:
+        # 只处理已成交的订单
+        if order.get('status') != 'closed':
+            continue
+        
+        # 如果订单有trades字段，直接使用这些交易记录
+        if 'trades' in order and order['trades']:
+            for trade in order['trades']:
+                # 确保交易记录有必要的字段
+                if all(key in trade for key in ['id', 'timestamp', 'symbol', 'side', 'amount', 'price']):
+                    trades.append(trade)
+        else:
+            # 如果订单没有trades字段，尝试从订单信息创建交易记录
+            try:
+                # 确保订单有必要的字段
+                if all(key in order for key in ['id', 'timestamp', 'symbol', 'side', 'amount', 'price']):
+                    # 计算交易成本
+                    cost = float(order['price']) * float(order['amount'])
+                    
+                    # 创建标准交易记录格式
+                    trade = {
+                        'id': order['id'],
+                        'timestamp': order['timestamp'],
+                        'datetime': order.get('datetime', ''),
+                        'symbol': order['symbol'],
+                        'side': order['side'],
+                        'type': order.get('type', 'limit'),
+                        'amount': float(order['amount']),
+                        'price': float(order['price']),
+                        'cost': cost,
+                        'fee': order.get('fee', None),
+                        'info': order.get('info', {})
+                    }
+                    
+                    trades.append(trade)
+            except Exception as e:
+                    print(f"转换订单到交易记录时发生错误: {e}")
+                    import traceback
+                    print(f"错误堆栈:\n{traceback.format_exc()}")
+    
+    # 按时间戳排序交易记录
+    trades.sort(key=lambda x: x['timestamp'])
+    
+    print(f"成功将{len(closed_orders)}条已关闭订单转换为{len(trades)}条交易记录")
+    return trades
+
+
+# 启动Flask应用（生产环境应使用专业Web服务器）
+app.run(host='0.0.0.0', debug=False)

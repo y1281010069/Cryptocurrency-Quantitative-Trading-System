@@ -298,12 +298,12 @@
             // 跳过加载状态行
             if (row.querySelector('.fa-spinner')) return;
             
-            const symbol = row.dataset.symbol.toLowerCase();
-            const assetTypeName = row.dataset.assetType;
+            const symbol = row.dataset.symbol || '';
+            const assetTypeName = row.dataset.assetType || '';
             
             // 检查是否匹配筛选条件
             const typeMatch = (assetType === 'all' || assetTypeName === assetType);
-            const searchMatch = (searchTerm === '' || symbol.includes(searchTerm));
+            const searchMatch = (searchTerm === '' || symbol.toLowerCase().includes(searchTerm));
             
             if (typeMatch && searchMatch) {
                 row.classList.remove('hidden');
