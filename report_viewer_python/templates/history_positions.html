@@ -8,6 +8,9 @@
 <style>
     .history-card {
         transition: transform 0.2s, box-shadow 0.2s;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
     }
     .history-card:hover {
         transform: translateY(-2px);
@@ -39,6 +42,33 @@
         font-size: 0.875rem;
         color: #64748b;
     }
+    .data-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+    .data-item {
+        background-color: #f9fafb;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+    }
+    .data-label {
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-bottom: 0.25rem;
+    }
+    .data-value {
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+    .nowrap {
+        white-space: nowrap;
+    }
+    .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 </style>
 {% endblock %}
 
@@ -56,6 +86,16 @@
                         <option value="3months">最近3个月</option>
                         <option value="6months">最近6个月</option>
                         <option value="1year">最近1年</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                        <i class="fa fa-chevron-down text-xs"></i>
+                    </div>
+                </div>
+                <div class="relative">
+                    <select id="order-type-filter" class="appearance-none bg-white border border-gray-300 text-gray-700 py-2 pl-3 pr-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="all">全部订单类型</option>
+                        <option value="include_post_only">包含Post Only</option>
+                        <option value="exclude_post_only">排除Post Only</option>
                     </select>
                     <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
                         <i class="fa fa-chevron-down text-xs"></i>
@@ -97,15 +137,19 @@
             </div>
         </div>
         
-        <div id="history-container" class="space-y-4">
+        <div id="history-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <!-- 历史仓位卡片将通过JavaScript动态添加 -->
             <div class="text-center py-12 text-gray-500" id="loading-history">
-                <i class="fa fa-spinner fa-spin text-3xl mb-2"></i>
-                <p>加载历史仓位数据中...</p>
+                <div class="col-span-full flex flex-col items-center justify-center">
+                    <i class="fa fa-spinner fa-spin text-3xl mb-2"></i>
+                    <p>加载历史仓位数据中...</p>
+                </div>
             </div>
             <div id="no-history" class="hidden text-center py-12 text-gray-500">
-                <i class="fa fa-history text-3xl mb-2"></i>
-                <p>暂无历史仓位记录</p>
+                <div class="col-span-full flex flex-col items-center justify-center">
+                    <i class="fa fa-history text-3xl mb-2"></i>
+                    <p>暂无历史仓位记录</p>
+                </div>
             </div>
         </div>
     </div>
@@ -180,6 +224,24 @@
                             return exitDate >= filterDate;
                         });
                     }
+
+                    // 根据订单类型过滤（post_only）
+                    const orderTypeFilter = document.getElementById('order-type-filter').value;
+                    if (orderTypeFilter !== 'all') {
+                        filteredPositions = filteredPositions.filter(position => {
+                            // 检查订单是否为post_only类型
+                            // 注意：后端传递的字段是'type'而不是'order_type'
+                            const orderType = position.type ? position.type.toLowerCase() : '';
+                            const isPostOnly = orderType.includes('post') || orderType.includes('postonly');
+                            
+                            if (orderTypeFilter === 'include_post_only') {
+                                return isPostOnly;
+                            } else if (orderTypeFilter === 'exclude_post_only') {
+                                return !isPostOnly;
+                            }
+                            return true;
+                        });
+                    }
                     
                     filteredPositions.forEach(position => {
                         // 计算持仓时间
@@ -245,59 +307,53 @@
         const profitBadgeIcon = isProfitPositive ? 'fa-arrow-up' : 'fa-arrow-down';
         
         card.innerHTML = `
-            <div class="flex justify-between items-start mb-2">
+            <div class="flex justify-between items-start mb-4">
                 <div class="flex items-center">
-                    <h3 class="font-bold text-lg mr-2">${formatSymbol(position.symbol)}</h3>
-                    <span class="px-2 py-1 text-xs bg-primary/10 text-primary rounded-full">${position.type}</span>
+                    <h3 class="font-bold text-base mr-2">${formatSymbol(position.symbol)}</h3>
+                    <span class="px-2 py-1 text-xs bg-primary/10 text-primary rounded-full nowrap">${position.type}</span>
                 </div>
-                <div class="flex items-center">
-                    <span class="${profitBadgeClass} mr-2 flex items-center">
+                <div class="flex flex-col items-end">
+                    <span class="${profitBadgeClass} mb-1 flex items-center">
                         <i class="fa ${profitBadgeIcon} mr-1"></i>
                         ${position.profit_percent.toFixed(2)}%
                     </span>
+                    <span class="text-xs text-gray-500 nowrap">${position.exit_datetime}</span>
                 </div>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <p class="text-sm text-gray-500">入场时间</p>
-                    <p class="font-semibold">${position.entry_datetime}</p>
+            <div class="data-grid mb-4 flex-grow">
+                <div class="data-item">
+                    <p class="data-label">合约张数</p>
+                    <p class="data-value truncate">${Math.floor(position.amount)}</p>
                 </div>
-                <div>
-                    <p class="text-sm text-gray-500">出场时间</p>
-                    <p class="font-semibold">${position.exit_datetime}</p>
+                <div class="data-item">
+                    <p class="data-label">持仓成本 (USDT)</p>
+                    <p class="data-value">${position.cost.toFixed(2)}</p>
+                </div>
+                <div class="data-item">
+                    <p class="data-label">入场价格</p>
+                    <p class="data-value truncate">${position.entry_price.toFixed(6)}</p>
+                </div>
+                <div class="data-item">
+                    <p class="data-label">出场价格</p>
+                    <p class="data-value truncate">${position.exit_price.toFixed(6)}</p>
+                </div>
+                <div class="data-item">
+                    <p class="data-label">入场时间</p>
+                    <p class="data-value truncate">${position.entry_datetime}</p>
+                </div>
+                <div class="data-item">
+                    <p class="data-label">出场时间</p>
+                    <p class="data-value truncate">${position.exit_datetime}</p>
                 </div>
             </div>
             
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
-                <div>
-                        <p class="text-sm text-gray-500">合约张数</p>
-                        <p class="font-semibold">${Math.floor(position.amount)}</p>
+            <div class="border-t pt-3 mt-auto">
+                <div class="flex justify-between items-center">
+                    <div class="holding-period">
+                        <i class="fa fa-clock-o mr-1"></i> 持仓时间: ${position.holdingTime}
                     </div>
-                <div>
-                    <p class="text-sm text-gray-500">持仓成本 (USDT)</p>
-                    <p class="font-semibold">${position.cost.toFixed(2)}</p>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500">入场价格</p>
-                    <p class="font-semibold">${position.entry_price.toFixed(6)}</p>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500">出场价格</p>
-                    <p class="font-semibold">${position.exit_price.toFixed(6)}</p>
-                </div>
-                <div>
-                    <p class="text-sm text-gray-500">持仓市值 (USDT)</p>
-                    <p class="font-semibold">${position.cost.toFixed(2)}</p>
-                </div>
-            </div>
-            
-            <div class="flex justify-between items-center">
-                <div class="holding-period">
-                    <i class="fa fa-clock-o mr-1"></i> 持仓时间: ${position.holdingTime}
-                </div>
-                <div>
-                    <p class="text-xl font-bold ${profitClass}">盈亏: ${position.profit.toFixed(2)} USDT</p>
+                    <p class="text-lg font-bold ${profitClass}">${position.profit.toFixed(2)} USDT</p>
                 </div>
             </div>
         `;
@@ -359,15 +415,25 @@
     function applySearch() {
         const searchTerm = document.getElementById('history-search').value.toLowerCase().trim();
         const historyCards = document.querySelectorAll('.history-card');
+        let hasVisibleCards = false;
         
         historyCards.forEach(card => {
             const symbol = card.querySelector('h3').textContent.toLowerCase();
             if (symbol.includes(searchTerm) || searchTerm === '') {
-                card.style.display = 'block';
+                card.classList.remove('hidden');
+                hasVisibleCards = true;
             } else {
-                card.style.display = 'none';
+                card.classList.add('hidden');
             }
         });
+        
+        // 检查是否有可见的历史仓位卡片
+        const noHistoryElement = document.getElementById('no-history');
+        if (historyCards.length > 0 && !hasVisibleCards) {
+            noHistoryElement.classList.remove('hidden');
+        } else {
+            noHistoryElement.classList.add('hidden');
+        }
     }
     
     // 添加事件监听器
@@ -380,6 +446,9 @@
         
         // 时间过滤事件
         document.getElementById('time-filter').addEventListener('change', loadHistoryPositions);
+        
+        // 订单类型过滤事件
+        document.getElementById('order-type-filter').addEventListener('change', loadHistoryPositions);
         
         // 搜索框事件
         document.getElementById('history-search').addEventListener('input', applySearch);

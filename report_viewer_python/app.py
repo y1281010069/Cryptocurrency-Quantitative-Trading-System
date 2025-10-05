@@ -8,6 +8,9 @@ import ccxt
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify
 
+# 导入合约工具模块
+import contract_utils
+
 # 导入OKX官方Python包
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib', 'python-okx-master'))
 from okx.Trade import TradeAPI
@@ -120,7 +123,7 @@ def init_okx_exchange():
                 api_secret_key=config.okx_api_secret,
                 passphrase=config.okx_api_passphrase,
                 use_server_time=True,
-                flag='1',  # 实盘环境
+                flag='0',  # 实盘环境
                 debug=False,
                 proxy=proxy_config
             )
@@ -1299,10 +1302,7 @@ def get_okx_history_positions():
             try:
                 # 调用get_orders_history API，获取最近7天的已成交订单
                 response = okx_official_api.get_orders_history(
-                    instType='ANY',  # 所有类型的合约
-                    state='filled',  # 已成交状态
-                    begin=int(time.mktime(time.strptime(start_time, '%Y-%m-%d %H:%M:%S')) * 1000),  # 开始时间戳(毫秒)
-                    end=int(time.mktime(time.strptime(end_time, '%Y-%m-%d %H:%M:%S')) * 1000),  # 结束时间戳(毫秒)
+                    instType='SWAP',  # 所有类型的合约
                     limit='100'  # 获取最近100条记录
                 )
                 

@@ -20,14 +20,35 @@ logger = logging.getLogger(__name__)
 class ContractInfoCache:
     """合约信息缓存类，避免重复查询数据库"""
     def __init__(self):
-        self.cache = {}
-        
+        self.cache = {}  # 缓存每个符号的乘数
+        self.all_contracts = None  # 存储所有合约信息的字典
+        self.contracts_loaded = False  # 标记是否已加载所有合约信息
+    
+    def _load_all_contracts(self):
+        """一次性加载所有合约信息到内存"""
+        if not self.contracts_loaded:
+            try:
+                logger.info("正在一次性加载所有合约信息...")
+                # 一次性获取所有合约信息
+                all_contracts_data = variety_model.get_all()
+                # 创建名称到合约信息的映射字典
+                self.all_contracts = {}
+                for contract in all_contracts_data:
+                    name = contract.get('name', '').lower()
+                    self.all_contracts[name] = contract
+                self.contracts_loaded = True
+                logger.info(f"成功加载{len(self.all_contracts)}条合约信息")
+            except Exception as e:
+                logger.error(f"加载所有合约信息时发生错误: {e}")
+                self.all_contracts = {}
+                self.contracts_loaded = True  # 即使出错也标记为已加载，避免重复尝试
+    
     def get_contract_multiplier(self, symbol: str) -> float:
         """
         获取合约乘数（一张合约等于几个币）
         
         Args:
-            symbol: 交易对符号，如'BTC/USDT'
+            symbol: 交易对符号，如'BTC/USDT'或'BTC-USDT-SWAP'
             
         Returns:
             float: 合约乘数，如果获取失败返回1.0（默认值）
@@ -37,28 +58,53 @@ class ContractInfoCache:
             return self.cache[symbol]
         
         try:
-            # 处理OKX API返回的格式，移除可能的:USDT后缀
+            # 确保已加载所有合约信息
+            self._load_all_contracts()
+            
+            # 处理OKX API返回的格式
             base_symbol = symbol
-            if base_symbol.find(':') != -1:
-                base_symbol = base_symbol.split(':')[0]
-                logger.debug(f"处理交易对格式: {symbol} -> {base_symbol}")
+            
+            # 处理带-SWAP后缀的合约名称
+            if '-SWAP' in base_symbol:
+                # 提取基础交易对，如LINK-USDT-SWAP -> LINK-USDT
+                base_symbol_without_swap = base_symbol.replace('-SWAP', '')
+                logger.debug(f"处理SWAP格式: {symbol} -> {base_symbol_without_swap}")
+            else:
+                base_symbol_without_swap = base_symbol
+                
+            # 处理带冒号的格式，如'BTC:USDT'
+            if base_symbol_without_swap.find(':') != -1:
+                base_symbol_without_swap = base_symbol_without_swap.split(':')[0]
+                logger.debug(f"处理冒号格式: {symbol} -> {base_symbol_without_swap}")
             
             # 尝试多种可能的格式，因为数据库中使用的是连字符格式
             formats_to_try = [
-                base_symbol.replace('/', '-'),  # 转换为连字符格式
-                base_symbol.upper().replace('/', '-'),  # 大写并转换为连字符格式
-                base_symbol.lower().replace('/', '-'),  # 小写并转换为连字符格式
-                base_symbol,  # 保持原始格式
-                base_symbol.upper(),  # 大写原始格式
-                base_symbol.lower()  # 小写原始格式
+                base_symbol_without_swap.replace('/', '-'),  # 转换为连字符格式
+                base_symbol_without_swap.upper().replace('/', '-'),  # 大写并转换为连字符格式
+                base_symbol_without_swap.lower().replace('/', '-'),  # 小写并转换为连字符格式
+                base_symbol_without_swap,  # 保持原始格式
+                base_symbol_without_swap.upper(),  # 大写原始格式
+                base_symbol_without_swap.lower(),  # 小写原始格式
+                base_symbol,  # 保持完整的原始格式（包括SWAP后缀）
+                base_symbol.upper(),  # 大写完整的原始格式
+                base_symbol.lower()  # 小写完整的原始格式
             ]
             
             contract_info = None
-            # 尝试所有可能的格式
+            # 在内存中尝试所有可能的格式
             for db_symbol in formats_to_try:
-                contract_info = variety_model.get(name=db_symbol)
-                if contract_info:
+                if db_symbol.lower() in self.all_contracts:
+                    contract_info = self.all_contracts[db_symbol.lower()]
                     break
+            
+            # 如果内存中没有找到，再尝试单条查询（作为备选）
+            if not contract_info:
+                for db_symbol in formats_to_try:
+                    contract_info = variety_model.get(name=db_symbol)
+                    if contract_info:
+                        # 将找到的合约信息添加到内存字典中
+                        self.all_contracts[db_symbol.lower()] = contract_info
+                        break
             
             if contract_info:
                 # 获取minQty作为合约乘数
