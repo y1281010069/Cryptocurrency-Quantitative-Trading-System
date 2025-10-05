@@ -226,6 +226,14 @@
             });
     }
     
+    // 格式化交易对，移除:USDT后缀
+    function formatSymbol(symbol) {
+        if (symbol && symbol.includes(':')) {
+            return symbol.split(':')[0];
+        }
+        return symbol;
+    }
+    
     // 创建历史仓位卡片
     function createHistoryCard(position) {
         const card = document.createElement('div');
@@ -239,7 +247,7 @@
         card.innerHTML = `
             <div class="flex justify-between items-start mb-2">
                 <div class="flex items-center">
-                    <h3 class="font-bold text-lg mr-2">${position.symbol}</h3>
+                    <h3 class="font-bold text-lg mr-2">${formatSymbol(position.symbol)}</h3>
                     <span class="px-2 py-1 text-xs bg-primary/10 text-primary rounded-full">${position.type}</span>
                 </div>
                 <div class="flex items-center">
@@ -263,8 +271,12 @@
             
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
                 <div>
-                    <p class="text-sm text-gray-500">持仓数量</p>
-                    <p class="font-semibold">${position.amount.toFixed(6)}</p>
+                        <p class="text-sm text-gray-500">合约张数</p>
+                        <p class="font-semibold">${Math.floor(position.amount)}</p>
+                    </div>
+                <div>
+                    <p class="text-sm text-gray-500">持仓成本 (USDT)</p>
+                    <p class="font-semibold">${position.cost.toFixed(2)}</p>
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">入场价格</p>
@@ -276,7 +288,7 @@
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">持仓市值 (USDT)</p>
-                    <p class="font-semibold">${(position.amount * position.entry_price).toFixed(2)}</p>
+                    <p class="font-semibold">${position.cost.toFixed(2)}</p>
                 </div>
             </div>
             

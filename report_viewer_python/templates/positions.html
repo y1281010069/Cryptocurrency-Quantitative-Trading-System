@@ -8,6 +8,9 @@
 <style>
     .position-card {
         transition: transform 0.2s, box-shadow 0.2s;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
     }
     .position-card:hover {
         transform: translateY(-2px);
@@ -34,6 +37,33 @@
     .profit-badge.negative {
         background-color: #f72585;
         color: white;
+    }
+    .data-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+    .data-item {
+        background-color: #f9fafb;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+    }
+    .data-label {
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-bottom: 0.25rem;
+    }
+    .data-value {
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+    .nowrap {
+        white-space: nowrap;
+    }
+    .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 </style>
 {% endblock %}
@@ -74,15 +104,19 @@
             </div>
         </div>
         
-        <div id="positions-container" class="space-y-4">
+        <div id="positions-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <!-- 仓位卡片将通过JavaScript动态添加 -->
             <div class="text-center py-12 text-gray-500" id="loading-positions">
-                <i class="fa fa-spinner fa-spin text-3xl mb-2"></i>
-                <p>加载仓位数据中...</p>
+                <div class="col-span-full flex flex-col items-center justify-center">
+                    <i class="fa fa-spinner fa-spin text-3xl mb-2"></i>
+                    <p>加载仓位数据中...</p>
+                </div>
             </div>
             <div id="no-positions" class="hidden text-center py-12 text-gray-500">
-                <i class="fa fa-briefcase text-3xl mb-2"></i>
-                <p>暂无持仓</p>
+                <div class="col-span-full flex flex-col items-center justify-center">
+                    <i class="fa fa-briefcase text-3xl mb-2"></i>
+                    <p>暂无持仓</p>
+                </div>
             </div>
         </div>
     </div>
@@ -120,11 +154,11 @@
                     let totalCost = 0;
                     
                     data.data.forEach(position => {
-                        // 计算每个仓位的市值
-                        const positionValue = position.amount * position.current_price;
+                        // 使用后端计算的cost字段
+                        const positionValue = position.cost * (position.current_price / position.entry_price);
                         totalValue += positionValue;
                         totalProfit += position.profit;
-                        totalCost += position.amount * position.entry_price;
+                        totalCost += position.cost;
                         
                         const positionCard = createPositionCard(position);
                         positionsContainer.appendChild(positionCard);
@@ -157,6 +191,14 @@
             });
     }
     
+    // 格式化交易对，移除:USDT后缀
+    function formatSymbol(symbol) {
+        if (symbol && symbol.includes(':')) {
+            return symbol.split(':')[0];
+        }
+        return symbol;
+    }
+    
     // 创建仓位卡片
     function createPositionCard(position) {
         const card = document.createElement('div');
@@ -168,40 +210,44 @@
         const profitBadgeIcon = isProfitPositive ? 'fa-arrow-up' : 'fa-arrow-down';
         
         card.innerHTML = `
-            <div class="flex justify-between items-start mb-2">
+            <div class="flex justify-between items-start mb-4">
                 <div class="flex items-center">
-                    <h3 class="font-bold text-lg mr-2">${position.symbol}</h3>
-                    <span class="px-2 py-1 text-xs bg-primary/10 text-primary rounded-full">${position.type}</span>
+                    <h3 class="font-bold text-base mr-2">${formatSymbol(position.symbol)}</h3>
+                    <span class="px-2 py-1 text-xs bg-primary/10 text-primary rounded-full nowrap">${position.type}</span>
                 </div>
-                <div class="flex items-center">
-                    <span class="${profitBadgeClass} mr-2 flex items-center">
+                <div class="flex flex-col items-end">
+                    <span class="${profitBadgeClass} mb-1 flex items-center">
                         <i class="fa ${profitBadgeIcon} mr-1"></i>
                         ${position.profit_percent.toFixed(2)}%
                     </span>
-                    <span class="text-sm text-gray-500">${position.datetime}</span>
+                    <span class="text-xs text-gray-500 nowrap">${position.datetime}</span>
                 </div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                <div>
-                    <p class="text-sm text-gray-500">持仓数量</p>
-                    <p class="font-semibold">${position.amount.toFixed(6)}</p>
+            <div class="data-grid mb-4 flex-grow">
+                <div class="data-item">
+                        <p class="data-label">合约张数</p>
+                        <p class="data-value truncate">${Math.floor(position.amount)}</p>
+                    </div>
+                <div class="data-item">
+                    <p class="data-label">持仓成本 (USDT)</p>
+                    <p class="data-value">${position.cost.toFixed(2)}</p>
                 </div>
-                <div>
-                    <p class="text-sm text-gray-500">入场价格</p>
-                    <p class="font-semibold">${position.entry_price.toFixed(6)}</p>
+                <div class="data-item">
+                    <p class="data-label">入场价格</p>
+                    <p class="data-value truncate">${position.entry_price.toFixed(6)}</p>
                 </div>
-                <div>
-                    <p class="text-sm text-gray-500">当前价格</p>
-                    <p class="font-semibold">${position.current_price.toFixed(6)}</p>
+                <div class="data-item">
+                    <p class="data-label">当前价格</p>
+                    <p class="data-value truncate">${position.current_price.toFixed(6)}</p>
                 </div>
-                <div>
-                    <p class="text-sm text-gray-500">持仓市值 (USDT)</p>
-                    <p class="font-semibold">${(position.amount * position.current_price).toFixed(2)}</p>
+                <div class="data-item col-span-2">
+                    <p class="data-label">持仓市值 (USDT)</p>
+                    <p class="data-value">${(position.cost * (position.current_price / position.entry_price)).toFixed(2)}</p>
                 </div>
             </div>
-            <div>
-                <p class="text-sm text-gray-500">盈亏 (USDT)</p>
-                <p class="text-xl font-bold ${profitClass}">${position.profit.toFixed(2)}</p>
+            <div class="border-t pt-3 mt-auto">
+                <p class="data-label">盈亏 (USDT)</p>
+                <p class="text-lg font-bold ${profitClass}">${position.profit.toFixed(2)}</p>
             </div>
         `;
         
@@ -244,15 +290,25 @@
     function applySearch() {
         const searchTerm = document.getElementById('position-search').value.toLowerCase().trim();
         const positionCards = document.querySelectorAll('.position-card');
+        let hasVisibleCards = false;
         
         positionCards.forEach(card => {
             const symbol = card.querySelector('h3').textContent.toLowerCase();
             if (symbol.includes(searchTerm) || searchTerm === '') {
-                card.style.display = 'block';
+                card.classList.remove('hidden');
+                hasVisibleCards = true;
             } else {
-                card.style.display = 'none';
+                card.classList.add('hidden');
             }
         });
+        
+        // 检查是否有可见的仓位卡片
+        const noPositionsElement = document.getElementById('no-positions');
+        if (positionCards.length > 0 && !hasVisibleCards) {
+            noPositionsElement.classList.remove('hidden');
+        } else {
+            noPositionsElement.classList.add('hidden');
+        }
     }
     
     // 添加事件监听器

@@ -8,6 +8,10 @@ import ccxt
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify
 
+# 导入OKX官方Python包
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib', 'python-okx-master'))
+from okx.Trade import TradeAPI
+
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -50,9 +54,10 @@ DEFAULT_REPORT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspa
 
 # 初始化OKX交易所连接
 okx_exchange = None
+okx_official_api = None  # OKX官方包的TradeAPI实例
 def init_okx_exchange():
     """初始化OKX交易所连接"""
-    global okx_exchange
+    global okx_exchange, okx_official_api
     try:
         print("=== 开始初始化OKX交易所连接 ===")
         # 检查API密钥是否已配置
@@ -107,7 +112,24 @@ def init_okx_exchange():
         global okx_exchange
         okx_exchange = ccxt.okx(exchange_config)
         
-        # 验证连接是否成功
+        # 创建OKX官方包的TradeAPI实例
+        try:
+            print("正在创建OKX官方包TradeAPI实例...")
+            okx_official_api = TradeAPI(
+                api_key=config.okx_api_key,
+                api_secret_key=config.okx_api_secret,
+                passphrase=config.okx_api_passphrase,
+                use_server_time=True,
+                flag='1',  # 实盘环境
+                debug=False,
+                proxy=proxy_config
+            )
+            print("OKX官方包TradeAPI实例创建成功")
+        except Exception as e:
+            print(f"创建OKX官方包TradeAPI实例失败: {e}")
+            okx_official_api = None
+        
+        # 验证ccxt连接是否成功
         try:
             print("正在验证OKX连接...")
             # 加载市场数据
@@ -126,9 +148,10 @@ def init_okx_exchange():
         print(f"初始化OKX交易所连接时发生错误: {e}")
         print(f"错误类型: {type(e).__name__}")
         okx_exchange = None
+        okx_official_api = None
         return False
     finally:
-        print(f"=== OKX连接初始化完成 - 连接状态: {'已连接' if okx_exchange else '未连接'} ===")
+        print(f"=== OKX连接初始化完成 - 连接状态: {'已连接' if okx_exchange else '未连接'} - 官方API状态: {'已初始化' if okx_official_api else '未初始化'} ===")
 
 # 初始化OKX连接
 init_okx_exchange()
@@ -1189,6 +1212,9 @@ def modify_okx_stop_order(order_id, symbol, new_price, new_trigger_price, new_am
         return False
 
 
+# 导入合约工具函数
+import contract_utils
+
 def get_okx_positions():
     """获取OKX交易所的当前仓位数据"""
     print("=== 开始获取OKX当前仓位数据 ===")
@@ -1221,17 +1247,21 @@ def get_okx_positions():
             entry_price = float(position.get('entryPrice', 0))
             amount = float(position.get('contracts', 0))
             profit = float(position.get('unrealizedPnl', 0))
-            profit_percent = (profit / (entry_price * amount) * 100) if (entry_price * amount) > 0 else 0
+            
+            # 使用contract_utils中的函数计算正确的成本
+            cost = contract_utils.calculate_cost(amount, entry_price, symbol)
+            profit_percent = (profit / cost * 100) if cost > 0 else 0
             
             formatted_position = {
                 'symbol': symbol,
                 'type': position.get('type', 'spot'),
-                'amount': amount,
+                'amount': amount,  # 合约张数
                 'entry_price': entry_price,
                 'current_price': current_price,
                 'profit': profit,
                 'profit_percent': profit_percent,
-                'datetime': datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
+                'datetime': datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else '',
+                'cost': cost  # 添加计算后的实际成本
             }
             formatted_positions.append(formatted_position)
         
@@ -1245,54 +1275,153 @@ def get_okx_positions():
 
 
 def get_okx_history_positions():
-    """获取OKX交易所的当前仓位数据"""
-    print("=== 开始获取OKX当前仓位数据 ===")
+    """获取OKX交易所的历史仓位数据"""
+    print("=== 开始获取OKX历史仓位数据 ===")
     # 如果没有成功连接到OKX或API密钥未配置，返回空数据
-    if not okx_exchange:
+    if not okx_official_api and not okx_exchange:
         print("OKX连接状态: 未连接 - 将返回空数据")
         return []
     
     try:
-        print("正在调用OKX API获取当前仓位...")
-        # 获取当前仓位
-        positions = okx_exchange.fetch_closed_orders()
-        print(f"成功获取到{len(positions)}个仓位")
+        formatted_positions = []
+        
+        # 优先使用OKX官方包的get_orders_history方法
+        if okx_official_api:
+            print("正在使用OKX官方包获取历史订单...")
+            
+            # 使用get_orders_history获取最近7天的订单
+            # 设置instType为'ANY'获取所有类型的订单
+            # 设置state为'filled'获取已成交的订单
+            # 设置时间范围为最近7天
+            end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            start_time = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+            
+            try:
+                # 调用get_orders_history API，获取最近7天的已成交订单
+                response = okx_official_api.get_orders_history(
+                    instType='ANY',  # 所有类型的合约
+                    state='filled',  # 已成交状态
+                    begin=int(time.mktime(time.strptime(start_time, '%Y-%m-%d %H:%M:%S')) * 1000),  # 开始时间戳(毫秒)
+                    end=int(time.mktime(time.strptime(end_time, '%Y-%m-%d %H:%M:%S')) * 1000),  # 结束时间戳(毫秒)
+                    limit='100'  # 获取最近100条记录
+                )
+                
+                # 检查响应是否成功
+                if response and isinstance(response, dict) and 'code' in response and response['code'] == '0' and 'data' in response:
+                    orders = response['data']
+                    print(f"成功通过官方API获取到{len(orders)}个已成交订单")
+                else:
+                    print(f"官方API响应格式异常: {response}")
+                    orders = []
+                
+            except Exception as api_error:
+                print(f"调用OKX官方API时发生错误: {api_error}")
+                # 如果官方API调用失败，尝试使用ccxt作为备选
+                orders = []
+                
+        else:
+            # 如果没有初始化官方API，使用ccxt作为备选
+            orders = []
+        
+        # 如果官方API没有获取到订单或调用失败，尝试使用ccxt
+        if not orders and okx_exchange:
+            print("正在使用ccxt获取历史订单...")
+            try:
+                orders = okx_exchange.fetch_my_liquidations()
+                print(f"成功通过ccxt获取到{len(orders)}个已关闭订单")
+            except Exception as ccxt_error:
+                print(f"调用ccxt API时发生错误: {ccxt_error}")
+                orders = []
         
         # 格式化仓位数据
-        formatted_positions = []
-        for position in positions:
-            # 跳过空仓位
-            if float(position.get('contracts', 0)) == 0:
-                continue
-                
-            # 获取当前价格
+        for order in orders:
             try:
-                symbol = position.get('symbol', '')
-                ticker = okx_exchange.fetch_ticker(symbol)
-                current_price = ticker['last'] if ticker else 0.0
-            except:
-                current_price = 0.0
-            
-            entry_price = float(position.get('entryPrice', 0))
-            amount = float(position.get('contracts', 0))
-            profit = float(position.get('unrealizedPnl', 0))
-            profit_percent = (profit / (entry_price * amount) * 100) if (entry_price * amount) > 0 else 0
-            
-            formatted_position = {
-                'symbol': symbol,
-                'type': position.get('type', 'spot'),
-                'amount': amount,
-                'entry_price': entry_price,
-                'current_price': current_price,
-                'profit': profit,
-                'profit_percent': profit_percent,
-                'datetime': datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
-            }
-            formatted_positions.append(formatted_position)
+                # 处理官方API返回的数据格式
+                if isinstance(order, dict) and 'instId' in order and 'accFillSz' in order:
+                    # 跳过空订单
+                    if float(order.get('accFillSz', 0)) == 0:
+                        continue
+                        
+                    symbol = order.get('instId', '')
+                    amount = float(order.get('accFillSz', 0))
+                    entry_price = float(order.get('avgPx', 0)) if order.get('avgPx') else 0
+                    
+                    # 计算利润
+                    profit = 0
+                    if order.get('pnl'):
+                        try:
+                            profit = float(order.get('pnl', 0))
+                        except:
+                            profit = 0
+                    
+                    # 使用合约工具计算正确的成本
+                    cost = contract_utils.calculate_cost(amount, entry_price, symbol) if 'contract_utils' in globals() else amount * entry_price
+                    profit_percent = (profit / cost * 100) if cost > 0 else 0
+                    
+                    # 获取订单的开仓和平仓时间
+                    cTime = int(order.get('cTime', 0))  # 创建时间
+                    uTime = int(order.get('uTime', 0))  # 更新时间
+                    entry_datetime = datetime.fromtimestamp(cTime / 1000).strftime('%Y-%m-%d %H:%M:%S') if cTime else ''
+                    exit_datetime = datetime.fromtimestamp(uTime / 1000).strftime('%Y-%m-%d %H:%M:%S') if uTime else ''
+                    
+                    formatted_position = {
+                        'symbol': symbol,
+                        'type': order.get('ordType', 'spot'),
+                        'amount': amount,
+                        'entry_price': entry_price,
+                        'exit_price': float(order.get('avgPx', 0)) if order.get('avgPx') else entry_price,
+                        'profit': profit,
+                        'profit_percent': profit_percent,
+                        'entry_datetime': entry_datetime,
+                        'exit_datetime': exit_datetime,
+                        'cost': cost
+                    }
+                # 处理ccxt返回的数据格式
+                elif isinstance(order, dict) and 'symbol' in order:
+                    # 跳过空订单
+                    if float(order.get('filled', 0)) == 0:
+                        continue
+                        
+                    symbol = order.get('symbol', '')
+                    amount = float(order.get('filled', 0))
+                    entry_price = float(order.get('price', 0))
+                    
+                    # 计算利润
+                    profit = 0
+                    
+                    # 使用合约工具计算正确的成本
+                    cost = contract_utils.calculate_cost(amount, entry_price, symbol) if 'contract_utils' in globals() else amount * entry_price
+                    profit_percent = 0
+                    
+                    # 获取订单的开仓和平仓时间
+                    entry_datetime = datetime.fromtimestamp(order.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('timestamp') else ''
+                    exit_datetime = datetime.fromtimestamp(order.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('timestamp') else ''
+                    
+                    formatted_position = {
+                        'symbol': symbol,
+                        'type': order.get('type', 'spot'),
+                        'amount': amount,
+                        'entry_price': entry_price,
+                        'exit_price': entry_price,
+                        'profit': profit,
+                        'profit_percent': profit_percent,
+                        'entry_datetime': entry_datetime,
+                        'exit_datetime': exit_datetime,
+                        'cost': cost
+                    }
+                else:
+                    # 未知的订单格式，跳过
+                    continue
+                
+                formatted_positions.append(formatted_position)
+            except Exception as process_error:
+                print(f"处理订单时发生错误: {process_error}")
+                continue
         
+        print(f"成功格式化{len(formatted_positions)}条仓位数据")
         return formatted_positions
     except Exception as e:
-        print(f"获取当前仓位数据时发生错误: {e}")
+        print(f"获取历史仓位数据时发生错误: {e}")
         # 打印更详细的错误信息
         import traceback
         print(f"错误堆栈:\n{traceback.format_exc()}")
