@@ -14,6 +14,7 @@ import contract_utils
 # 导入OKX官方Python包
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib', 'python-okx-master'))
 from okx.Trade import TradeAPI
+from okx.Account import AccountAPI
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -510,37 +511,46 @@ def get_okx_balance():
 
 
 def get_okx_open_orders():
-    """获取OKX交易所的当前挂单数据"""
+    """获取OKX交易所的当前挂单数据，使用/api/v5/trade/orders-pending接口"""
     print("=== 开始获取OKX当前挂单数据 ===")
     # 如果没有成功连接到OKX或API密钥未配置，返回空数据
-    if not okx_exchange:
-        print("OKX连接状态: 未连接 - 将返回空数据")
+    if not okx_official_api:
+        print("OKX官方API实例未初始化 - 将返回空数据")
         return []
     
     try:
-        print("正在调用OKX API获取当前挂单...")
-        # 获取当前挂单
-        open_orders = okx_exchange.fetch_open_orders()
-        print(f"成功获取到{len(open_orders)}个挂单")
+        print("正在调用OKX API /api/v5/trade/orders-pending获取当前挂单...")
+        # 使用OKX官方API调用orders-pending接口，指定instType为SWAP
+        response = okx_official_api.get_order_list(
+            instType='SWAP'  # 指定合约类型为永续合约
+        )
         
-        # 格式化挂单数据
-        formatted_orders = []
-        for order in open_orders:
-            formatted_order = {
-                'id': order.get('id', ''),
-                'symbol': order.get('symbol', ''),
-                'type': order.get('type', ''),
-                'side': order.get('side', ''),
-                'price': float(order.get('price', 0)),
-                'amount': float(order.get('amount', 0)),
-                'remaining': float(order.get('remaining', 0)),
-                'filled': float(order.get('filled', 0)),
-                'status': order.get('status', ''),
-                'datetime': datetime.fromtimestamp(order.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('timestamp') else ''
-            }
-            formatted_orders.append(formatted_order)
-        
-        return formatted_orders
+        # 检查响应是否成功
+        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0' and 'data' in response:
+            open_orders = response['data']
+            print(f"成功获取到{len(open_orders)}个挂单")
+            
+            # 格式化挂单数据
+            formatted_orders = []
+            for order in open_orders:
+                formatted_order = {
+                    'id': order.get('ordId', ''),
+                    'symbol': order.get('instId', ''),
+                    'type': order.get('ordType', ''),
+                    'side': order.get('side', ''),
+                    'price': float(order.get('px', 0)) if order.get('px') else 0,
+                    'amount': float(order.get('sz', 0)) if order.get('sz') else 0,
+                    'remaining': float(order.get('sz', 0)) - float(order.get('accFillSz', 0)) if order.get('sz') and order.get('accFillSz') else 0,
+                    'filled': float(order.get('accFillSz', 0)) if order.get('accFillSz') else 0,
+                    'status': order.get('state', ''),
+                    'datetime': datetime.fromtimestamp(int(order.get('cTime', '0')) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('cTime') else ''
+                }
+                formatted_orders.append(formatted_order)
+            
+            return formatted_orders
+        else:
+            print(f"获取挂单数据失败，响应: {response}")
+            return []
     except Exception as e:
         print(f"获取挂单数据时发生错误: {e}")
         # 打印更详细的错误信息
@@ -550,19 +560,29 @@ def get_okx_open_orders():
 
 
 def cancel_okx_order(order_id, symbol):
-    """取消OKX交易所的订单"""
+    """取消OKX交易所的订单，使用/api/v5/trade/cancel-order接口"""
     print(f"=== 开始取消OKX订单: {order_id}, {symbol} ===")
     # 如果没有成功连接到OKX或API密钥未配置，返回失败
-    if not okx_exchange:
-        print("OKX连接状态: 未连接 - 无法取消订单")
+    if not okx_official_api:
+        print("OKX官方API实例未初始化 - 无法取消订单")
         return False
     
     try:
-        print("正在调用OKX API取消订单...")
-        # 取消订单
-        result = okx_exchange.cancel_order(order_id, symbol)
-        print(f"订单取消成功: {order_id}")
-        return True
+        print("正在调用OKX官方API /api/v5/trade/cancel-order取消订单...")
+        # 使用OKX官方API调用cancel-order接口取消订单
+        response = okx_official_api.cancel_order(
+            ordId=order_id,
+            instId=symbol
+        )
+        
+        # 检查响应是否成功
+        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0':
+            print(f"订单取消成功: {order_id}")
+            return True
+        else:
+            error_msg = response.get('msg', '未知错误') if response else '无响应'
+            print(f"订单取消失败: {error_msg}")
+            return False
     except Exception as e:
         print(f"取消订单时发生错误: {e}")
         # 打印更详细的错误信息
@@ -572,43 +592,31 @@ def cancel_okx_order(order_id, symbol):
 
 
 def modify_okx_order(order_id, symbol, new_price, new_amount):
-    """修改OKX交易所的订单（先取消，再重新下单）"""
+    """修改OKX交易所的订单，使用/api/v5/trade/amend-order接口"""
     print(f"=== 开始修改OKX订单: {order_id}, {symbol} ===")
     # 如果没有成功连接到OKX或API密钥未配置，返回失败
-    if not okx_exchange:
-        print("OKX连接状态: 未连接 - 无法修改订单")
+    if not okx_official_api:
+        print("OKX官方API实例未初始化 - 无法修改订单")
         return False
     
     try:
-        # 首先获取原订单信息
-        open_orders = okx_exchange.fetch_open_orders(symbol)
-        original_order = None
-        for order in open_orders:
-            if order.get('id') == order_id:
-                original_order = order
-                break
-        
-        if not original_order:
-            print(f"未找到订单: {order_id}")
-            return False
-        
-        # 取消原订单
-        cancel_result = okx_exchange.cancel_order(order_id, symbol)
-        if not cancel_result:
-            print(f"取消原订单失败: {order_id}")
-            return False
-        
-        # 创建新订单
-        new_order = okx_exchange.create_order(
-            symbol=symbol,
-            type='limit',
-            side=original_order.get('side', ''),
-            amount=new_amount,
-            price=new_price
+        # 使用OKX官方API调用amend-order接口修改订单
+        print(f"正在调用amend-order接口修改订单: {order_id}，新价格: {new_price}, 新数量: {new_amount}")
+        response = okx_official_api.amend_order(
+            ordId=order_id,
+            instId=symbol,
+            newPx=str(new_price) if new_price else None,
+            newSz=str(new_amount) if new_amount else None
         )
         
-        print(f"订单修改成功: {order_id} -> {new_order.get('id')}")
-        return True
+        # 检查响应是否成功
+        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0':
+            print(f"订单修改成功: {order_id}")
+            return True
+        else:
+            error_msg = response.get('msg', '未知错误') if response else '无响应'
+            print(f"订单修改失败: {error_msg}")
+            return False
     except Exception as e:
         print(f"修改订单时发生错误: {e}")
         # 打印更详细的错误信息
@@ -1278,79 +1286,194 @@ def get_okx_positions():
 
 
 def get_okx_history_positions():
-    """获取OKX交易所的历史仓位数据"""
+    """获取OKX交易所的历史仓位数据，使用positions-history接口"""
     print("=== 开始获取OKX历史仓位数据 ===")
     # 如果没有成功连接到OKX或API密钥未配置，返回空数据
-    if not okx_official_api and not okx_exchange:
-        print("OKX连接状态: 未连接 - 将返回空数据")
+    if not hasattr(config, 'okx_api_key') or not config.okx_api_key:
+        print("OKX API密钥未配置 - 将返回空数据")
         return []
     
     try:
         formatted_positions = []
         
-        # 优先使用OKX官方包的get_orders_history方法
-        if okx_official_api:
-            print("正在使用OKX官方包获取历史订单...")
+        # 创建AccountAPI实例来调用positions-history接口
+        try:
+            print("正在创建OKX AccountAPI实例...")
+            # 获取代理配置（如果有）
+            proxy_config = None
+            if hasattr(config, 'proxy') and config.proxy:
+                proxy_config = config.proxy
+            elif hasattr(config, 'https_proxy') and config.https_proxy:
+                proxy_config = config.https_proxy
             
-            # 使用get_orders_history获取最近7天的订单
-            # 设置instType为'ANY'获取所有类型的订单
-            # 设置state为'filled'获取已成交的订单
-            # 设置时间范围为最近7天
-            end_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            start_time = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+            # 创建AccountAPI实例
+            account_api = AccountAPI(
+                api_key=config.okx_api_key,
+                api_secret_key=config.okx_api_secret,
+                passphrase=config.okx_api_passphrase,
+                use_server_time=True,
+                flag='0',  # 实盘环境
+                debug=False,
+                proxy=proxy_config
+            )
             
-            try:
-                # 调用get_orders_history API，获取最近7天的已成交订单
-                response = okx_official_api.get_orders_history(
-                    instType='SWAP',  # 所有类型的合约
-                    limit='100'  # 获取最近100条记录
-                )
-                
-                # 检查响应是否成功
-                if response and isinstance(response, dict) and 'code' in response and response['code'] == '0' and 'data' in response:
-                    orders = response['data']
-                    print(f"成功通过官方API获取到{len(orders)}个已成交订单")
+            print("正在使用OKX positions-history接口获取历史仓位数据...")
+            
+            # 调用positions-history接口，获取最新的历史仓位（最近24小时）
+            end_timestamp = int(time.time() * 1000)  # 当前时间戳（毫秒）
+            start_timestamp = end_timestamp - 24 * 60 * 60 * 1000  # 1天前的时间戳
+            
+            response = account_api.get_positions_history(
+                instType='SWAP',  # 合约类型，SWAP表示永续合约
+                mgnMode='cross',  # 保证金模式，isolated表示逐仓
+                limit='100'  # 获取最近100条记录
+            )
+            
+            # 检查响应是否成功
+            if response and isinstance(response, dict) and 'code' in response and response['code'] == '0' and 'data' in response:
+                positions_history = response['data']
+                print(f"成功通过positions-history接口获取到{len(positions_history)}条历史仓位数据")
+            else:
+                print(f"positions-history接口响应格式异常: {response}")
+                # 尝试使用之前的方法作为备选
+                if okx_official_api:
+                    print("备选方案: 使用get_orders_history接口")
+                    response = okx_official_api.get_orders_history(
+                        instType='SWAP',
+                        limit='100'
+                    )
+                    if response and isinstance(response, dict) and 'code' in response and response['code'] == '0' and 'data' in response:
+                        positions_history = response['data']
+                    else:
+                        positions_history = []
                 else:
-                    print(f"官方API响应格式异常: {response}")
-                    orders = []
+                    positions_history = []
                 
-            except Exception as api_error:
-                print(f"调用OKX官方API时发生错误: {api_error}")
-                # 如果官方API调用失败，尝试使用ccxt作为备选
-                orders = []
-                
-        else:
-            # 如果没有初始化官方API，使用ccxt作为备选
-            orders = []
-        
-        # 如果官方API没有获取到订单或调用失败，尝试使用ccxt
-        if not orders and okx_exchange:
-            print("正在使用ccxt获取历史订单...")
-            try:
-                orders = okx_exchange.fetch_my_liquidations()
-                print(f"成功通过ccxt获取到{len(orders)}个已关闭订单")
-            except Exception as ccxt_error:
-                print(f"调用ccxt API时发生错误: {ccxt_error}")
-                orders = []
+        except Exception as api_error:
+            print(f"调用OKX positions-history接口时发生错误: {api_error}")
+            # 如果接口调用失败，尝试使用ccxt作为备选
+            if okx_exchange:
+                print("备选方案: 使用ccxt获取历史订单")
+                try:
+                    positions_history = okx_exchange.fetch_my_liquidations()
+                except:
+                    positions_history = []
+            else:
+                positions_history = []
         
         # 格式化仓位数据
-        for order in orders:
+        for position in positions_history:
             try:
-                # 处理官方API返回的数据格式
-                if isinstance(order, dict) and 'instId' in order and 'accFillSz' in order:
-                    # 跳过空订单
-                    if float(order.get('accFillSz', 0)) == 0:
-                        continue
-                        
-                    symbol = order.get('instId', '')
-                    amount = float(order.get('accFillSz', 0))
-                    entry_price = float(order.get('avgPx', 0)) if order.get('avgPx') else 0
+                # 处理positions-history接口返回的数据格式
+                # 放宽过滤条件，不再严格要求adjEq字段存在
+                if isinstance(position, dict) and 'instId' in position:
+                    # 打印原始数据以便调试
+                    print(f"处理原始仓位数据: {position}")
+                    
+                    # 获取必要的数据
+                    symbol = position.get('instId', '')
+                    pos_side = position.get('posSide', '')  # 仓位方向
+                    # 尝试从不同可能的字段获取仓位数量
+                    amount = 0
+                    try:
+                        # 优先尝试API实际返回的字段
+                        amount = float(position.get('closeTotalPos', position.get('openMaxPos', 0)))
+                        # 如果上述字段为空，再尝试其他可能的字段
+                        if amount == 0:
+                            amount = float(position.get('vol', position.get('accFillSz', position.get('filled', 0))))
+                    except Exception as e:
+                        amount = 0
+                        print(f"无法解析仓位数量: {position}, 错误: {e}")
+                    
+                    # 尝试从不同可能的字段获取入场价格
+                    entry_price = 0
+                    try:
+                        entry_price = float(position.get('avgPx', position.get('price', 0)))
+                    except:
+                        entry_price = 0
+                        print(f"无法解析入场价格: {position}")
+                    
+                    # 尝试从不同可能的字段获取出场价格
+                    exit_price = 0
+                    try:
+                        exit_price = float(position.get('lastPx', position.get('avgPx', position.get('price', 0))))
+                    except:
+                        exit_price = 0
+                        print(f"无法解析出场价格: {position}")
                     
                     # 计算利润
                     profit = 0
-                    if order.get('pnl'):
+                    try:
+                        # 尝试从不同可能的字段获取利润
+                        profit = float(position.get('pnl', position.get('unrealizedPnl', 0)))
+                    except:
+                        profit = 0
+                        print(f"无法解析利润: {position}")
+                    
+                    # 使用合约工具计算正确的成本
+                    cost = 0
+                    try:
+                        cost = contract_utils.calculate_cost(amount, entry_price, symbol) if 'contract_utils' in globals() else amount * entry_price
+                    except:
+                        cost = amount * entry_price
+                        print(f"无法计算成本: {position}")
+                    
+                    profit_percent = (profit / cost * 100) if cost > 0 else 0
+                    
+                    # 获取订单的开仓和平仓时间
+                    cTime = 0
+                    uTime = 0
+                    try:
+                        cTime = int(position.get('cTime', position.get('timestamp', 0)))
+                        uTime = int(position.get('uTime', position.get('timestamp', 0)))
+                    except:
+                        print(f"无法解析时间戳: {position}")
+                    
+                    entry_datetime = ''
+                    exit_datetime = ''
+                    try:
+                        entry_datetime = datetime.fromtimestamp(cTime / 1000).strftime('%Y-%m-%d %H:%M:%S') if cTime else ''
+                        exit_datetime = datetime.fromtimestamp(uTime / 1000).strftime('%Y-%m-%d %H:%M:%S') if uTime else ''
+                    except:
+                        print(f"无法格式化时间: {cTime}, {uTime}")
+                    
+                    # 获取订单类型（包含post_only等信息）
+                    ord_type = position.get('ordType', 'limit')
+                    
+                    # 只有当金额大于0时才添加到结果中
+                    if amount > 0:
+                        formatted_position = {
+                            'symbol': symbol,
+                            'type': ord_type,
+                            'amount': amount,
+                            'entry_price': entry_price,
+                            'exit_price': exit_price,
+                            'profit': profit,
+                            'profit_percent': profit_percent,
+                            'entry_datetime': entry_datetime,
+                            'exit_datetime': exit_datetime,
+                            'cost': cost,
+                            'posSide': pos_side  # 添加仓位方向信息
+                        }
+                        formatted_positions.append(formatted_position)
+                        print(f"成功格式化一条历史仓位数据: {formatted_position}")
+                    else:
+                        print(f"跳过空仓位: {position}")
+                # 处理get_orders_history接口返回的数据格式（备选方案）
+                elif isinstance(position, dict) and 'instId' in position and 'accFillSz' in position:
+                    # 跳过空订单
+                    if float(position.get('accFillSz', 0)) == 0:
+                        continue
+                        
+                    symbol = position.get('instId', '')
+                    amount = float(position.get('accFillSz', 0))
+                    entry_price = float(position.get('avgPx', 0)) if position.get('avgPx') else 0
+                    
+                    # 计算利润
+                    profit = 0
+                    if position.get('pnl'):
                         try:
-                            profit = float(order.get('pnl', 0))
+                            profit = float(position.get('pnl', 0))
                         except:
                             profit = 0
                     
@@ -1359,32 +1482,34 @@ def get_okx_history_positions():
                     profit_percent = (profit / cost * 100) if cost > 0 else 0
                     
                     # 获取订单的开仓和平仓时间
-                    cTime = int(order.get('cTime', 0))  # 创建时间
-                    uTime = int(order.get('uTime', 0))  # 更新时间
+                    cTime = int(position.get('cTime', 0))  # 创建时间
+                    uTime = int(position.get('uTime', 0))  # 更新时间
                     entry_datetime = datetime.fromtimestamp(cTime / 1000).strftime('%Y-%m-%d %H:%M:%S') if cTime else ''
                     exit_datetime = datetime.fromtimestamp(uTime / 1000).strftime('%Y-%m-%d %H:%M:%S') if uTime else ''
                     
                     formatted_position = {
                         'symbol': symbol,
-                        'type': order.get('ordType', 'spot'),
+                        'type': position.get('ordType', 'spot'),
                         'amount': amount,
                         'entry_price': entry_price,
-                        'exit_price': float(order.get('avgPx', 0)) if order.get('avgPx') else entry_price,
+                        'exit_price': float(position.get('avgPx', 0)) if position.get('avgPx') else entry_price,
                         'profit': profit,
                         'profit_percent': profit_percent,
                         'entry_datetime': entry_datetime,
                         'exit_datetime': exit_datetime,
                         'cost': cost
                     }
-                # 处理ccxt返回的数据格式
-                elif isinstance(order, dict) and 'symbol' in order:
+                    formatted_positions.append(formatted_position)
+                    print(f"成功格式化一条历史仓位数据: {formatted_position}")
+                # 处理ccxt返回的数据格式（备选方案）
+                elif isinstance(position, dict) and 'symbol' in position:
                     # 跳过空订单
-                    if float(order.get('filled', 0)) == 0:
+                    if float(position.get('filled', 0)) == 0:
                         continue
                         
-                    symbol = order.get('symbol', '')
-                    amount = float(order.get('filled', 0))
-                    entry_price = float(order.get('price', 0))
+                    symbol = position.get('symbol', '')
+                    amount = float(position.get('filled', 0))
+                    entry_price = float(position.get('price', 0))
                     
                     # 计算利润
                     profit = 0
@@ -1394,12 +1519,12 @@ def get_okx_history_positions():
                     profit_percent = 0
                     
                     # 获取订单的开仓和平仓时间
-                    entry_datetime = datetime.fromtimestamp(order.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('timestamp') else ''
-                    exit_datetime = datetime.fromtimestamp(order.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('timestamp') else ''
+                    entry_datetime = datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
+                    exit_datetime = datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
                     
                     formatted_position = {
                         'symbol': symbol,
-                        'type': order.get('type', 'spot'),
+                        'type': position.get('type', 'spot'),
                         'amount': amount,
                         'entry_price': entry_price,
                         'exit_price': entry_price,
@@ -1409,16 +1534,16 @@ def get_okx_history_positions():
                         'exit_datetime': exit_datetime,
                         'cost': cost
                     }
+                    formatted_positions.append(formatted_position)
+                    print(f"成功格式化一条历史仓位数据: {formatted_position}")
                 else:
                     # 未知的订单格式，跳过
                     continue
-                
-                formatted_positions.append(formatted_position)
             except Exception as process_error:
-                print(f"处理订单时发生错误: {process_error}")
+                print(f"处理仓位数据时发生错误: {process_error}")
                 continue
         
-        print(f"成功格式化{len(formatted_positions)}条仓位数据")
+        print(f"成功格式化{len(formatted_positions)}条历史仓位数据")
         return formatted_positions
     except Exception as e:
         print(f"获取历史仓位数据时发生错误: {e}")

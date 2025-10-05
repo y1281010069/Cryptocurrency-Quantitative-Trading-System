@@ -285,15 +285,19 @@ class MultiTimeframeProfessionalSystem:
             atr_value = calculate_atr(df_15m)
             
             # 检查是否所有时间框架都为买入或都为卖出
-            all_agreed = True
-            first_signal = None
-            for signal in signals.values():
-                if not first_signal:
-                    first_signal = signal
-                elif (("买入" in first_signal and "买入" not in signal) or 
-                      ("卖出" in first_signal and "卖出" not in signal)):
-                    all_agreed = False
-                    break
+            # 首先过滤掉"观望"信号
+            valid_signals = [signal for signal in signals.values() if "观望" not in signal]
+            
+            # 如果没有有效的方向信号，不能算一致
+            all_agreed = False
+            if valid_signals:
+                # 检查所有有效信号是否方向一致
+                first_direction = "买入" if "买入" in valid_signals[0] else "卖出"
+                all_agreed = True
+                for signal in valid_signals[1:]:
+                    if first_direction not in signal:
+                        all_agreed = False
+                        break
             
             # 根据是否所有时间框架一致决定使用的TARGET_MULTIPLIER
             target_multiplier = TRADING_CONFIG['TARGET_MULTIPLIER']
