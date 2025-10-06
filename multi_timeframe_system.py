@@ -125,20 +125,7 @@ class MultiTimeframeProfessionalSystem:
             logger.error(f"交易所连接失败: {e}")
             raise
             
-    def get_okx_positions(self):
-        """获取OKX当前仓位列表
-        调用lib.py中的通用函数获取仓位数据
-        
-        Returns:
-            list: 格式化后的仓位列表
-        """
-        try:
-            # 调用lib.py中的通用函数，传入交易所实例
-            return get_okx_positions(self.exchange, use_contract_utils=False)
-        except Exception as e:
-            logger.error(f"获取仓位数据失败: {e}")
-            return []
-            
+
     def save_positions_needing_attention(self, positions):
         """保存需要关注的持仓记录到文件
         
@@ -499,7 +486,14 @@ class MultiTimeframeProfessionalSystem:
 
                     # 增加仓位管理
             # 获取当前仓位列表
-            current_positions = self.get_okx_positions()
+            current_positions = get_okx_positions(self.exchange)
+            
+            # 手动为每个position添加datetime字段（不使用use_contract_utils=True）
+            for position in current_positions:
+                # 格式化timestamp为datetime字符串
+                position['datetime'] = datetime.fromtimestamp(
+                    position.get('timestamp', 0) / 1000
+                ).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
             
             # 检查是否有需要关注的持仓
             positions_needing_attention = []
@@ -557,16 +551,106 @@ class MultiTimeframeProfessionalSystem:
                                 'signal_action': matched_opportunity.overall_action,
                                 'confidence_level': matched_opportunity.confidence_level
                             })
+                else:
+                    # 检查持仓时间是否超过5小时再记录
+                    try:
+                        # 直接从现有position对象获取datetime信息
+                        if position.get('datetime'):
+                            # 计算持仓时间（小时）
+                            entry_time = datetime.strptime(position['datetime'], '%Y-%m-%d %H:%M:%S')
+                            holding_hours = (datetime.now() - entry_time).total_seconds() / 3600
+                            
+                            # 只有持仓超过5小时才记录
+                            if holding_hours >= 5:
+                                positions_needing_attention.append({
+                                    'symbol': symbol,
+                                    'direction': pos_side,
+                                    'amount': position.get('amount', 0),
+                                    'entry_price': position.get('entry_price', 0),
+                                    'current_price': position.get('current_price', 0),
+                                    'profit_percent': position.get('profit_percent', 0),
+                                    'signal_action': '标的不在分析范围内',
+                                    'confidence_level': 'N/A',
+                                    'holding_hours': round(holding_hours, 2),
+                                    'entry_time': entry_time.strftime('%Y-%m-%d %H:%M:%S')
+                                })
+                                logger.info(f"记录持仓超过5小时的标的: {symbol} (持仓时间: {round(holding_hours, 2)}小时)")
+                        else:
+                            # 如果无法获取时间信息，默认记录（兼容旧版本）
+                            positions_needing_attention.append({
+                                'symbol': symbol,
+                                'direction': pos_side,
+                                'amount': position.get('amount', 0),
+                                'entry_price': position.get('entry_price', 0),
+                                'current_price': position.get('current_price', 0),
+                                'profit_percent': position.get('profit_percent', 0),
+                                'signal_action': '标的不在分析范围内',
+                                'confidence_level': 'N/A'
+                            })
+                    except Exception as e:
+                        logger.error(f"计算持仓时间时发生错误: {e}")
+                        # 出错时默认记录
+                        positions_needing_attention.append({
+                            'symbol': symbol,
+                            'direction': pos_side,
+                            'amount': position.get('amount', 0),
+                            'entry_price': position.get('entry_price', 0),
+                            'current_price': position.get('current_price', 0),
+                            'profit_percent': position.get('profit_percent', 0),
+                            'signal_action': '标的不在分析范围内',
+                            'confidence_level': 'N/A'
+                        })
             
             # 如果有需要关注的持仓，保存记录
             if positions_needing_attention:
                 attention_file = self.save_positions_needing_attention(positions_needing_attention)
                 print(f"⚠️  需关注的持仓已记录至: {attention_file}")
-                # 统计多头和空头仓位数量
-                long_count = sum(1 for pos in positions_needing_attention if pos['direction'] == 'long')
-                short_count = sum(1 for pos in positions_needing_attention if pos['direction'] == 'short')
-                print(f"📊 需关注的持仓统计: 多头 {long_count} 个, 空头 {short_count} 个")
+                # 统计各类需关注的持仓数量
+                long_count = sum(1 for pos in positions_needing_attention if pos['direction'] == 'long' and pos['signal_action'] != '标的不在分析范围内')
+                short_count = sum(1 for pos in positions_needing_attention if pos['direction'] == 'short' and pos['signal_action'] != '标的不在分析范围内')
+                not_in_scope_count = sum(1 for pos in positions_needing_attention if pos['signal_action'] == '标的不在分析范围内')
+                print(f"📊 需关注的持仓统计: 多头 {long_count} 个, 空头 {short_count} 个, 不在分析范围内 {not_in_scope_count} 个")
 
+                # 记录的这些持仓，循环调用url = 'http://149.129.66.131:81/myOrder'
+                for pos in positions_needing_attention:
+                    try:
+                        # 格式化name参数：从KAITO/USDT转换为KAITO（去掉-USDT后缀）
+                        name = pos['symbol'].replace('/', '-').replace(':USDT', '')
+                        
+                        # 设置ac_type参数：多头对应c_l，空头对应c_s
+                        ac_type = 'c_l' if pos['direction'] == 'long' else 'c_s'
+                        
+                        # 构造请求参数
+                        payload = {
+                            'name': name,
+                            'mechanism_id': TRADING_CONFIG['MECHANISM_ID'],
+                            'ac_type': ac_type,
+                            'volume_plan': pos['amount']
+                        }
+                        
+                        # 发送POST请求（表单形式）
+                        url = 'http://149.129.66.131:81/myOrder'
+
+                        # 打印接口请求信息
+                        logger.info(f"发送请求到接口: {url}")
+                        logger.info(f"请求参数: {payload}")
+                        
+                        # 发送请求
+                        response = requests.post(url, data=payload, timeout=10)
+                        
+                        # 打印接口返回信息
+                        logger.info(f"接口返回状态码: {response.status_code}")
+                        logger.info(f"接口返回内容: {response.text}")
+                        
+                        # 记录请求结果
+                        if response.status_code == 200:
+                            logger.info(f"成功发送持仓信息到API: {pos['symbol']} ({pos['direction']})")
+                        else:
+                            logger.warning(f"发送持仓信息到API失败 (状态码: {response.status_code}): {pos['symbol']}")
+                            logger.debug(f"API响应: {response.text}")
+                        
+                    except Exception as e:
+                        logger.error(f"发送持仓信息到API时发生错误: {e}")
                 
 
             else:
@@ -790,8 +874,8 @@ class MultiTimeframeProfessionalSystem:
             # 发送HTTP POST请求到指定API
             for signal in trade_signals:
                 try:
-                    # 格式化name参数：从KAITO/USDT转换为KAITO-USDT
-                    name = signal.symbol.replace('/', '-')
+                    # 格式化name参数：从KAITO/USDT转换为KAITO（去掉-USDT后缀）
+                    name = signal.symbol.replace('/', '-').replace(':USDT', '')
                     
                     # 设置ac_type参数：买入对应o_l，卖出对应o_s
                     ac_type = 'o_l' if signal.overall_action == '买入' else 'o_s'
@@ -799,7 +883,7 @@ class MultiTimeframeProfessionalSystem:
                     # 构造请求参数
                     payload = {
                         'name': name,
-                        'mechanism_id': 13,
+                        'mechanism_id': TRADING_CONFIG['MECHANISM_ID'],
                         'stop_win_price': signal.target_short,
                         'stop_loss_price': signal.stop_loss,
                         'ac_type': ac_type,

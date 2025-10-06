@@ -65,7 +65,10 @@ TRADING_CONFIG = {
     'FILTER_BY_1H': False,    # 是否根据1小时时间框架过滤买入信号
     
     # 持仓控制配置
-    'MAX_POSITIONS': 10       # 最大持仓数量限制，超过此数量将放弃新的交易机会
+    'MAX_POSITIONS': 10,      # 最大持仓数量限制，超过此数量将放弃新的交易机会
+    
+    # 交易机制ID
+    'MECHANISM_ID': 13        # 交易机制唯一标识
 }
 
 if __name__ == "__main__":

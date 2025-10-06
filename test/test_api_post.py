@@ -82,7 +82,7 @@ def test_api_post_logic():
             # 构造请求参数
             payload = {
                 'name': name,
-                'mechanism_id': 13,
+                'mechanism_id': 13,  # 测试使用固定值
                 'stop_win_price': stop_win_price,
                 'stop_loss_price': stop_loss_price,
                 'ac_type': ac_type,
