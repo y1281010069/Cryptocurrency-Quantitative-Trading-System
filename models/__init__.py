@@ -4,7 +4,6 @@
 from .factor_config_model import FactorConfig, factor_config_model
 from .his_order_model import HisOrder, his_order_model
 from .mechanism_model import Mechanism, mechanism_model
-from .mechanism_copy1_model import MechanismCopy1, mechanism_copy1_model
 from .method_model import Method, method_model
 from .method_conf_model import MethodConf, method_conf_model
 from .monitor_model import Monitor, monitor_model

@@ -1321,46 +1321,24 @@ def get_okx_positions():
     
     try:
         print("正在调用OKX API获取当前仓位...")
-        # 获取当前仓位
-        positions = okx_exchange.fetch_positions()
-        print(f"成功获取到{len(positions)}个仓位")
         
-        # 格式化仓位数据
-        formatted_positions = []
-        for position in positions:
-            # 跳过空仓位
-            if float(position.get('contracts', 0)) == 0:
-                continue
-                
-            # 获取当前价格
-            try:
-                symbol = position.get('symbol', '')
-                ticker = okx_exchange.fetch_ticker(symbol)
-                current_price = ticker['last'] if ticker else 0.0
-            except:
-                current_price = 0.0
-            
-            entry_price = float(position.get('entryPrice', 0))
-            amount = float(position.get('contracts', 0))
-            profit = float(position.get('unrealizedPnl', 0))
-            
-            # 使用contract_utils中的函数计算正确的成本
-            cost = contract_utils.calculate_cost(amount, entry_price, symbol)
-            profit_percent = (profit / cost * 100) if cost > 0 else 0
-            
-            formatted_position = {
-                'symbol': symbol,
-                'type': position.get('type', 'spot'),
-                'amount': amount,  # 合约张数
-                'entry_price': entry_price,
-                'current_price': current_price,
-                'profit': profit,
-                'profit_percent': profit_percent,
-                'datetime': datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else '',
-                'cost': cost  # 添加计算后的实际成本
-            }
-            formatted_positions.append(formatted_position)
+        # 调用lib.py中的通用函数，设置use_contract_utils=True以使用contract_utils计算成本
+        # 添加相对导入路径
+        import sys
+        import os
         
+        # 添加项目根目录到路径
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if project_root not in sys.path:
+            sys.path.append(project_root)
+        
+        # 导入通用函数
+        from lib import get_okx_positions as lib_get_okx_positions
+        
+        # 调用通用函数
+        formatted_positions = lib_get_okx_positions(okx_exchange, use_contract_utils=True)
+        
+        print(f"成功获取到{len(formatted_positions)}个有效仓位")
         return formatted_positions
     except Exception as e:
         print(f"获取当前仓位数据时发生错误: {e}")
@@ -1436,15 +1414,8 @@ def get_okx_history_positions():
                 
         except Exception as api_error:
             print(f"调用OKX positions-history接口时发生错误: {api_error}")
-            # 如果接口调用失败，尝试使用ccxt作为备选
-            if okx_exchange:
-                print("备选方案: 使用ccxt获取历史订单")
-                try:
-                    positions_history = okx_exchange.fetch_my_liquidations()
-                except:
-                    positions_history = []
-            else:
-                positions_history = []
+            # 当接口调用失败时，直接返回空列表
+            positions_history = []
         
         # 格式化仓位数据
         for position in positions_history:
@@ -1473,7 +1444,8 @@ def get_okx_history_positions():
                     # 尝试从不同可能的字段获取入场价格
                     entry_price = 0
                     try:
-                        entry_price = float(position.get('avgPx', position.get('price', 0)))
+                        # 优先使用openAvgPx作为入场价格
+                        entry_price = float(position.get('openAvgPx', position.get('avgPx', position.get('price', 0))))
                     except:
                         entry_price = 0
                         print(f"无法解析入场价格: {position}")
@@ -1481,7 +1453,8 @@ def get_okx_history_positions():
                     # 尝试从不同可能的字段获取出场价格
                     exit_price = 0
                     try:
-                        exit_price = float(position.get('lastPx', position.get('avgPx', position.get('price', 0))))
+                        # 优先使用closeAvgPx作为出场价格
+                        exit_price = float(position.get('closeAvgPx', position.get('lastPx', position.get('avgPx', position.get('price', 0)))))
                     except:
                         exit_price = 0
                         print(f"无法解析出场价格: {position}")
@@ -1509,8 +1482,8 @@ def get_okx_history_positions():
                     cTime = 0
                     uTime = 0
                     try:
-                        cTime = int(position.get('cTime', position.get('timestamp', 0)))
-                        uTime = int(position.get('uTime', position.get('timestamp', 0)))
+                        cTime = int(position.get('cTime', position.get('openTime', position.get('timestamp', 0))))
+                        uTime = int(position.get('uTime', position.get('closeTime', position.get('timestamp', 0))))
                     except:
                         print(f"无法解析时间戳: {position}")
                     
@@ -1552,7 +1525,8 @@ def get_okx_history_positions():
                         
                     symbol = position.get('instId', '')
                     amount = float(position.get('accFillSz', 0))
-                    entry_price = float(position.get('avgPx', 0)) if position.get('avgPx') else 0
+                    # 优先使用openAvgPx作为入场价格
+                    entry_price = float(position.get('openAvgPx', position.get('avgPx', 0))) if position.get('avgPx') or position.get('openAvgPx') else 0
                     
                     # 计算利润
                     profit = 0
@@ -1577,7 +1551,8 @@ def get_okx_history_positions():
                         'type': position.get('ordType', 'spot'),
                         'amount': amount,
                         'entry_price': entry_price,
-                        'exit_price': float(position.get('avgPx', 0)) if position.get('avgPx') else entry_price,
+                        # 优先使用closeAvgPx作为出场价格
+                        'exit_price': float(position.get('closeAvgPx', position.get('avgPx', 0))) if position.get('avgPx') or position.get('closeAvgPx') else entry_price,
                         'profit': profit,
                         'profit_percent': profit_percent,
                         'entry_datetime': entry_datetime,
@@ -1856,6 +1831,89 @@ def convert_closed_orders_to_trades(closed_orders):
     
     print(f"成功将{len(closed_orders)}条已关闭订单转换为{len(trades)}条交易记录")
     return trades
+
+
+@app.route('/trading_config')
+def trading_config():
+    """交易配置修改页面路由"""
+    return render_template('trading_config.html', now=datetime.now())
+
+
+@app.route('/api/get_trading_config')
+def api_get_trading_config():
+    """API接口，获取当前交易配置"""
+    print("=== 收到/api/get_trading_config请求 ===")
+    try:
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 尝试导入配置
+        from config import TRADING_CONFIG
+        print("交易配置获取成功")
+        return jsonify({
+            'success': True,
+            'config': TRADING_CONFIG
+        })
+    except Exception as e:
+        print(f"获取交易配置时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
+@app.route('/api/save_trading_config', methods=['POST'])
+def api_save_trading_config():
+    """API接口，保存交易配置"""
+    print("=== 收到/api/save_trading_config请求 ===")
+    try:
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 获取请求数据
+        config_data = request.get_json()
+        print(f"接收到的配置数据: {config_data}")
+        
+        # 读取当前config.py文件内容
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.py')
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_content = f.read()
+        
+        # 找到TRADING_CONFIG部分并替换
+        import re
+        # 定义新的TRADING_CONFIG内容
+        # 使用json.dumps转换，然后将JSON的小写布尔值替换为Python的大写布尔值
+        new_config_str = json.dumps(config_data, ensure_ascii=False, indent=4)
+        # 替换小写的true/false为大写的True/False
+        new_config_str = new_config_str.replace('true', 'True').replace('false', 'False')
+        new_config_content = f"TRADING_CONFIG = {new_config_str}"
+        
+        # 替换文件中的TRADING_CONFIG部分
+        updated_config_content = re.sub(r'TRADING_CONFIG = \{[\s\S]*?\}', new_config_content, config_content, flags=re.MULTILINE)
+        
+        # 写回文件
+        with open(config_path, 'w', encoding='utf-8') as f:
+            f.write(updated_config_content)
+        
+        print("交易配置保存成功")
+        return jsonify({
+            'success': True,
+            'message': '交易配置保存成功'
+        })
+    except Exception as e:
+        print(f"保存交易配置时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
 
 
 # 启动Flask应用（生产环境应使用专业Web服务器）

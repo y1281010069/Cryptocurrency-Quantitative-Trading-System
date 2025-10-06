@@ -1,0 +1,243 @@
+{% extends 'layout.html' %}
+
+{% block title %}交易配置修改{% endblock %}
+
+{% block page_title %}交易配置修改{% endblock %}
+
+{% block header_actions %}
+    <button id="save-config-btn" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition duration-200 flex items-center">
+        <i class="fa fa-save mr-2"></i>保存配置
+    </button>
+{% endblock %}
+
+{% block content %}
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 交易信号评分阈值 -->
+            <div class="border p-4 rounded-lg">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-signal text-primary mr-2"></i>交易信号评分阈值
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="buy-threshold" class="block text-gray-700 mb-1">买入信号评分阈值 (大于等于)</label>
+                        <input type="number" id="buy-threshold" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.1">
+                    </div>
+                    <div>
+                        <label for="sell-threshold" class="block text-gray-700 mb-1">卖出信号评分阈值 (小于等于)</label>
+                        <input type="number" id="sell-threshold" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ATR配置 -->
+            <div class="border p-4 rounded-lg">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-area-chart text-primary mr-2"></i>ATR配置
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="atr-period" class="block text-gray-700 mb-1">ATR计算周期</label>
+                        <input type="number" id="atr-period" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" min="1">
+                    </div>
+                    <div>
+                        <label for="target-multiplier" class="block text-gray-700 mb-1">目标价格ATR倍数</label>
+                        <input type="number" id="target-multiplier" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.1">
+                    </div>
+                    <div>
+                        <label for="stop-loss-multiplier" class="block text-gray-700 mb-1">止损价格ATR倍数</label>
+                        <input type="number" id="stop-loss-multiplier" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 币种过滤配置 -->
+            <div class="border p-4 rounded-lg">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-filter text-primary mr-2"></i>币种过滤配置
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="enabled-symbols" class="block text-gray-700 mb-1">启用的币种列表 (为空时表示全部启用)</label>
+                        <textarea id="enabled-symbols" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" rows="3" placeholder="每行输入一个币种，如BTC/USDT"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">多个币种请用换行符分隔</p>
+                    </div>
+                    <div>
+                        <label for="disabled-symbols" class="block text-gray-700 mb-1">禁用的币种列表 (优先级高于启用列表)</label>
+                        <textarea id="disabled-symbols" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" rows="3" placeholder="每行输入一个币种，如USDC/USDT"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">多个币种请用换行符分隔</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 时间框架过滤配置 -->
+            <div class="border p-4 rounded-lg">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-clock-o text-primary mr-2"></i>时间框架过滤配置
+                </h3>
+                <div class="space-y-4">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="filter-by-15m" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                        <label for="filter-by-15m" class="ml-2 block text-gray-700">是否按15分钟时间框架过滤</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="filter-by-1h" class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                        <label for="filter-by-1h" class="ml-2 block text-gray-700">是否按1小时时间框架过滤</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 持仓控制配置 -->
+            <div class="border p-4 rounded-lg">
+                <h3 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-briefcase text-primary mr-2"></i>持仓控制配置
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="max-positions" class="block text-gray-700 mb-1">最大持仓数量限制</label>
+                        <input type="number" id="max-positions" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" min="1">
+                        <p class="text-xs text-gray-500 mt-1">超过此数量将放弃新的交易机会</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 操作结果提示 -->
+    <div id="toast" class="fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 z-50 hidden">
+        <div class="flex items-center">
+            <i id="toast-icon" class="mr-2 text-xl"></i>
+            <span id="toast-message"></span>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 获取当前配置
+            fetch('/api/get_trading_config')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const config = data.config;
+                        
+                        // 填充表单
+                        document.getElementById('buy-threshold').value = config.BUY_THRESHOLD || 0.5;
+                        document.getElementById('sell-threshold').value = config.SELL_THRESHOLD || -0.5;
+                        
+                        document.getElementById('atr-period').value = config.ATR_PERIOD || 14;
+                        document.getElementById('target-multiplier').value = config.TARGET_MULTIPLIER || 4.5;
+                        document.getElementById('stop-loss-multiplier').value = config.STOP_LOSS_MULTIPLIER || 3;
+                        
+                        document.getElementById('enabled-symbols').value = (config.ENABLED_SYMBOLS || []).join('\n');
+                        document.getElementById('disabled-symbols').value = (config.DISABLED_SYMBOLS || []).join('\n');
+                        
+                        document.getElementById('filter-by-15m').checked = config.FILTER_BY_15M !== false;
+                        document.getElementById('filter-by-1h').checked = config.FILTER_BY_1H === true;
+                        
+                        document.getElementById('max-positions').value = config.MAX_POSITIONS || 10;
+                    } else {
+                        showToast('获取配置失败: ' + (data.error || '未知错误'), 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('获取配置失败:', error);
+                    showToast('获取配置时发生网络错误', 'error');
+                });
+            
+            // 保存配置按钮点击事件
+            document.getElementById('save-config-btn').addEventListener('click', function() {
+                const config = {
+                    BUY_THRESHOLD: parseFloat(document.getElementById('buy-threshold').value),
+                    SELL_THRESHOLD: parseFloat(document.getElementById('sell-threshold').value),
+                    ATR_PERIOD: parseInt(document.getElementById('atr-period').value),
+                    TARGET_MULTIPLIER: parseFloat(document.getElementById('target-multiplier').value),
+                    STOP_LOSS_MULTIPLIER: parseFloat(document.getElementById('stop-loss-multiplier').value),
+                    ENABLED_SYMBOLS: document.getElementById('enabled-symbols').value.split('\n').filter(s => s.trim() !== ''),
+                    DISABLED_SYMBOLS: document.getElementById('disabled-symbols').value.split('\n').filter(s => s.trim() !== ''),
+                    FILTER_BY_15M: document.getElementById('filter-by-15m').checked,
+                    FILTER_BY_1H: document.getElementById('filter-by-1h').checked,
+                    MAX_POSITIONS: parseInt(document.getElementById('max-positions').value)
+                };
+                
+                // 验证配置
+                if (isNaN(config.BUY_THRESHOLD)) {
+                    showToast('买入阈值必须为数字', 'error');
+                    return;
+                }
+                if (isNaN(config.SELL_THRESHOLD)) {
+                    showToast('卖出阈值必须为数字', 'error');
+                    return;
+                }
+                if (isNaN(config.ATR_PERIOD) || config.ATR_PERIOD < 1) {
+                    showToast('ATR周期必须为大于0的整数', 'error');
+                    return;
+                }
+                if (isNaN(config.TARGET_MULTIPLIER) || config.TARGET_MULTIPLIER <= 0) {
+                    showToast('目标价格ATR倍数必须为大于0的数字', 'error');
+                    return;
+                }
+                if (isNaN(config.STOP_LOSS_MULTIPLIER) || config.STOP_LOSS_MULTIPLIER <= 0) {
+                    showToast('止损价格ATR倍数必须为大于0的数字', 'error');
+                    return;
+                }
+                if (isNaN(config.MAX_POSITIONS) || config.MAX_POSITIONS < 1) {
+                    showToast('最大持仓数量必须为大于0的整数', 'error');
+                    return;
+                }
+                
+                // 保存配置
+                fetch('/api/save_trading_config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('配置保存成功', 'success');
+                    } else {
+                        showToast('保存配置失败: ' + (data.error || '未知错误'), 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('保存配置失败:', error);
+                    showToast('保存配置时发生网络错误', 'error');
+                });
+            });
+            
+            // 显示提示信息
+            function showToast(message, type = 'info') {
+                const toast = document.getElementById('toast');
+                const toastIcon = document.getElementById('toast-icon');
+                const toastMessage = document.getElementById('toast-message');
+                
+                // 设置提示内容
+                toastMessage.textContent = message;
+                
+                // 设置提示样式
+                if (type === 'success') {
+                    toast.className = 'fixed top-4 right-4 px-6 py-3 bg-success text-white rounded-lg shadow-lg transform transition-transform duration-300 z-50';
+                    toastIcon.className = 'fa fa-check-circle mr-2 text-xl';
+                } else if (type === 'error') {
+                    toast.className = 'fixed top-4 right-4 px-6 py-3 bg-danger text-white rounded-lg shadow-lg transform transition-transform duration-300 z-50';
+                    toastIcon.className = 'fa fa-exclamation-circle mr-2 text-xl';
+                } else {
+                    toast.className = 'fixed top-4 right-4 px-6 py-3 bg-primary text-white rounded-lg shadow-lg transform transition-transform duration-300 z-50';
+                    toastIcon.className = 'fa fa-info-circle mr-2 text-xl';
+                }
+                
+                // 显示提示
+                toast.style.transform = 'translateX(0)';
+                
+                // 3秒后隐藏提示
+                setTimeout(() => {
+                    toast.style.transform = 'translateX(100%)';
+                }, 3000);
+            }
+        });
+    </script>
+{% endblock %}

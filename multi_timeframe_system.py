@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import os
 import redis
-from lib import calculate_atr
+from lib import calculate_atr, get_okx_positions
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -124,6 +124,48 @@ class MultiTimeframeProfessionalSystem:
         except Exception as e:
             logger.error(f"交易所连接失败: {e}")
             raise
+            
+    def get_okx_positions(self):
+        """获取OKX当前仓位列表
+        调用lib.py中的通用函数获取仓位数据
+        
+        Returns:
+            list: 格式化后的仓位列表
+        """
+        try:
+            # 调用lib.py中的通用函数，传入交易所实例
+            return get_okx_positions(self.exchange, use_contract_utils=False)
+        except Exception as e:
+            logger.error(f"获取仓位数据失败: {e}")
+            return []
+            
+    def save_positions_needing_attention(self, positions):
+        """保存需要关注的持仓记录到文件
+        
+        Args:
+            positions (list): 需要关注的持仓列表
+        
+        Returns:
+            str: 保存的文件路径
+        """
+        try:
+            # 创建保存目录
+            output_dir = os.path.join(self.output_dir, 'attention_positions')
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # 生成文件名（包含时间戳）
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            file_path = os.path.join(output_dir, f'positions_attention_{timestamp}.json')
+            
+            # 保存为JSON文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(positions, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"需关注的持仓已保存至: {file_path}")
+            return file_path
+        except Exception as e:
+            logger.error(f"保存需关注持仓记录失败: {e}")
+            return ''
     
     def get_timeframe_data(self, symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
         """获取指定时间框架数据"""
@@ -453,6 +495,82 @@ class MultiTimeframeProfessionalSystem:
                 print(f"📊 交易信号已记录至: {signal_file}")
             else:
                 print("📊 当前无符合条件的交易信号")
+
+
+                    # 增加仓位管理
+            # 获取当前仓位列表
+            current_positions = self.get_okx_positions()
+            
+            # 检查是否有需要关注的持仓
+            positions_needing_attention = []
+            for position in current_positions:
+                pos_side = position.get('posSide', '')
+                
+                # 提取标的名称（去掉合约后缀）
+                symbol = position.get('symbol', '')
+                if ':' in symbol:
+                    base_symbol = symbol.split(':')[0]  # 例如 BTC/USDT:USDT -> BTC/USDT
+                else:
+                    base_symbol = symbol
+                
+                # 在opportunities中查找对应标的
+                matched_opportunity = next((op for op in opportunities if op.symbol == base_symbol), None)
+                
+                if matched_opportunity:
+                    # 多头仓位逻辑
+                    if pos_side == 'long':
+                        # 检查是否出现卖出信号或所有周期都为观察
+                        if ('卖出' in matched_opportunity.overall_action or 
+                            (matched_opportunity.weekly_trend == '观望' and 
+                             matched_opportunity.daily_trend == '观望' and 
+                             matched_opportunity.h4_signal == '观望' and 
+                             matched_opportunity.h1_signal == '观望' and 
+                             matched_opportunity.m15_signal == '观望')):
+                            # 记录需要关注的持仓
+                            positions_needing_attention.append({
+                                'symbol': symbol,
+                                'direction': pos_side,
+                                'amount': position.get('amount', 0),
+                                'entry_price': position.get('entry_price', 0),
+                                'current_price': position.get('current_price', 0),
+                                'profit_percent': position.get('profit_percent', 0),
+                                'signal_action': matched_opportunity.overall_action,
+                                'confidence_level': matched_opportunity.confidence_level
+                            })
+                    # 空头仓位逻辑
+                    elif pos_side == 'short':
+                        # 检查是否出现买入信号或所有周期都为观察
+                        if ('买入' in matched_opportunity.overall_action or 
+                            (matched_opportunity.weekly_trend == '观望' and 
+                             matched_opportunity.daily_trend == '观望' and 
+                             matched_opportunity.h4_signal == '观望' and 
+                             matched_opportunity.h1_signal == '观望' and 
+                             matched_opportunity.m15_signal == '观望')):
+                            # 记录需要关注的持仓
+                            positions_needing_attention.append({
+                                'symbol': symbol,
+                                'direction': pos_side,
+                                'amount': position.get('amount', 0),
+                                'entry_price': position.get('entry_price', 0),
+                                'current_price': position.get('current_price', 0),
+                                'profit_percent': position.get('profit_percent', 0),
+                                'signal_action': matched_opportunity.overall_action,
+                                'confidence_level': matched_opportunity.confidence_level
+                            })
+            
+            # 如果有需要关注的持仓，保存记录
+            if positions_needing_attention:
+                attention_file = self.save_positions_needing_attention(positions_needing_attention)
+                print(f"⚠️  需关注的持仓已记录至: {attention_file}")
+                # 统计多头和空头仓位数量
+                long_count = sum(1 for pos in positions_needing_attention if pos['direction'] == 'long')
+                short_count = sum(1 for pos in positions_needing_attention if pos['direction'] == 'short')
+                print(f"📊 需关注的持仓统计: 多头 {long_count} 个, 空头 {short_count} 个")
+
+                
+
+            else:
+                print("✅ 所有持仓状态正常")
         
         print(f"\n⏱️  分析完成！用时: {time.time() - start_time:.1f}秒")
         print("="*80)
