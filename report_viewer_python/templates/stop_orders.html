@@ -8,6 +8,10 @@
 <style>
     .order-card {
         transition: transform 0.2s, box-shadow 0.2s;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        min-height: 200px;
     }
     .order-card:hover {
         transform: translateY(-2px);
@@ -66,6 +70,34 @@
         background-color: #64748b;
         color: white;
     }
+    /* 参考仓位页面样式 */
+    .data-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+    .data-item {
+        background-color: #f9fafb;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+    }
+    .data-label {
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-bottom: 0.25rem;
+    }
+    .data-value {
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+    .nowrap {
+        white-space: nowrap;
+    }
+    .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 </style>
 {% endblock %}
 
@@ -87,13 +119,13 @@
             </div>
         </div>
         
-        <div id="orders-container" class="space-y-4">
+        <div id="orders-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <!-- 订单卡片将通过JavaScript动态添加 -->
-            <div class="text-center py-12 text-gray-500" id="loading-orders">
+            <div class="col-span-full text-center py-12 text-gray-500" id="loading-orders">
                 <i class="fa fa-spinner fa-spin text-3xl mb-2"></i>
                 <p>加载止盈止损订单数据中...</p>
             </div>
-            <div id="no-orders" class="hidden text-center py-12 text-gray-500">
+            <div class="col-span-full hidden text-center py-12 text-gray-500" id="no-orders">
                 <i class="fa fa-inbox text-3xl mb-2"></i>
                 <p>暂无止盈止损订单</p>
             </div>
@@ -117,12 +149,16 @@
         </div>
         <div class="mb-4">
             <div class="mb-2">
-                <label for="new-price" class="block text-gray-700 mb-1">新价格</label>
-                <input type="number" id="new-price" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.00000001">
+                <label for="new-tp-trigger-price" class="block text-gray-700 mb-1">新止盈触发价</label>
+                <input type="number" id="new-tp-trigger-price" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.00000001">
             </div>
             <div class="mb-2">
-                <label for="new-trigger-price" class="block text-gray-700 mb-1">新触发价格</label>
-                <input type="number" id="new-trigger-price" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.00000001">
+                <label for="new-tp-ord-price" class="block text-gray-700 mb-1">新止盈委托价</label>
+                <input type="number" id="new-tp-ord-price" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.00000001">
+            </div>
+            <div class="mb-2">
+                <label for="new-sl-trigger-price" class="block text-gray-700 mb-1">新止损触发价</label>
+                <input type="number" id="new-sl-trigger-price" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" step="0.00000001">
             </div>
             <div class="mb-2">
                 <label for="new-amount" class="block text-gray-700 mb-1">新数量</label>
@@ -132,6 +168,25 @@
         <div class="flex justify-end space-x-2">
             <button id="cancel-modify" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition duration-200">取消</button>
             <button id="confirm-modify" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition duration-200">确认修改</button>
+        </div>
+    </div>
+</div>
+
+<!-- 取消订单确认弹窗 -->
+<div id="cancel-modal" class="modal-backdrop hidden">
+    <div class="modal-content">
+        <div class="text-center mb-4">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-warning/10 text-warning mb-4">
+                <i class="fa fa-exclamation-triangle text-2xl"></i>
+            </div>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">确认取消止盈止损订单</h3>
+            <p class="text-gray-600">确定要取消此止盈止损订单吗？此操作不可撤销。</p>
+            <p class="text-gray-700 mt-2"><strong>交易对:</strong> <span id="cancel-symbol"></span></p>
+            <p class="text-gray-700"><strong>订单ID:</strong> <span id="cancel-order-id"></span></p>
+        </div>
+        <div class="flex justify-center space-x-2">
+            <button id="cancel-cancel" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition duration-200">取消</button>
+            <button id="confirm-cancel" class="px-4 py-2 bg-danger text-white rounded-lg hover:bg-danger/90 transition duration-200">确认取消</button>
         </div>
     </div>
 </div>
@@ -212,11 +267,19 @@
         
         const priceDisplay = order.price ? order.price.toFixed(6) : '市价';
         const triggerPriceDisplay = order.trigger_price ? order.trigger_price.toFixed(6) : '-';
+        // 止盈相关价格显示
+        const tpTriggerPriceDisplay = order.tp_trigger_price ? order.tp_trigger_price.toFixed(6) : '-';
+        const tpOrdPriceDisplay = order.tp_ord_price ? (order.tp_ord_price === -1 ? '市价' : order.tp_ord_price.toFixed(6)) : '-';
+        const tpTriggerTypeDisplay = order.tp_trigger_type ? order.tp_trigger_type : '-';
+        // 止损相关价格显示
+        const slTriggerPriceDisplay = order.sl_trigger_price ? order.sl_trigger_price.toFixed(6) : '-';
+        const slOrdPriceDisplay = order.sl_ord_price ? (order.sl_ord_price === -1 ? '市价' : order.sl_ord_price.toFixed(6)) : '-';
+        const slTriggerTypeDisplay = order.sl_trigger_type ? order.sl_trigger_type : '-';
         
         card.innerHTML = `
             <div class="flex justify-between items-start mb-2">
                 <div class="flex items-center">
-                    <h3 class="font-bold text-lg mr-2">${order.symbol}</h3>
+                    <h3 class="font-bold text-lg mr-2">${order.symbol.replace('-SWAP', '')}</h3>
                     <span class="px-2 py-1 text-xs rounded-full ${sideClass}">${sideText}</span>
                 </div>
                 <div class="flex items-center">
@@ -224,68 +287,63 @@
                     <span class="text-sm text-gray-500">${order.datetime}</span>
                 </div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                <div>
-                    <p class="text-sm text-gray-500">价格</p>
-                    <p class="font-semibold">${priceDisplay}</p>
+            <!-- 止盈止损相关字段显示 - 参考仓位页面布局 -->
+            <div class="data-grid mb-4">
+                <div class="data-item">
+                    <p class="data-label">止盈触发价</p>
+                    <p class="data-value">${tpTriggerPriceDisplay}</p>
                 </div>
-                <div>
-                    <p class="text-sm text-gray-500">触发价格</p>
-                    <p class="font-semibold">${triggerPriceDisplay}</p>
+                <div class="data-item">
+                    <p class="data-label">止盈委托价</p>
+                    <p class="data-value">${tpOrdPriceDisplay}</p>
                 </div>
-                <div>
-                    <p class="text-sm text-gray-500">数量</p>
-                    <p class="font-semibold">${order.amount.toFixed(6)}</p>
+                <div class="data-item">
+                    <p class="data-label">止损触发价</p>
+                    <p class="data-value">${slTriggerPriceDisplay}</p>
                 </div>
-                <div>
-                    <p class="text-sm text-gray-500">剩余</p>
-                    <p class="font-semibold">${order.remaining.toFixed(6)}</p>
+                <div class="data-item">
+                    <p class="data-label">止损委托价</p>
+                    <p class="data-value">${slOrdPriceDisplay}</p>
                 </div>
-            </div>
-            <div class="mb-2">
-                <p class="text-sm text-gray-500">订单类型</p>
-                <p class="font-semibold">${order.type === 'stop-limit' ? '止盈止损限价' : '止盈止损市价'}</p>
+                <div class="data-item col-span-2">
+                    <p class="data-label">数量</p>
+                    <p class="data-value">${order.amount.toFixed(6)}</p>
+                </div>
             </div>
             <div class="order-actions flex justify-end space-x-2">
                 <button class="edit-order-btn px-3 py-1 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition duration-200" data-order-id="${order.id}">
                     <i class="fa fa-pencil mr-1"></i>修改
                 </button>
+                <button class="cancel-order-btn px-3 py-1 bg-danger/10 text-danger rounded-lg hover:bg-danger/20 transition duration-200" data-order-id="${order.id}">
+                    <i class="fa fa-times mr-1"></i>取消
+                </button>
             </div>
         `;
         
-        // 添加修改订单按钮事件
-        if (order.status === 'active') {
-            card.querySelector('.edit-order-btn').addEventListener('click', () => {
-                currentOrder = order;
-                openModifyModal(order);
-            });
-        } else {
-            // 非活跃订单禁用修改按钮
-            const editBtn = card.querySelector('.edit-order-btn');
-            editBtn.disabled = true;
-            editBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            editBtn.classList.remove('hover:bg-primary/20');
-        }
+        // 添加修改订单按钮事件 - 去掉不可点击逻辑，所有订单都可点击
+        card.querySelector('.edit-order-btn').addEventListener('click', () => {
+            currentOrder = order;
+            openModifyModal(order);
+        });
+        
+        // 添加取消订单按钮事件 - 去掉不可点击逻辑，所有订单都可点击
+        card.querySelector('.cancel-order-btn').addEventListener('click', () => {
+            currentOrder = order;
+            openCancelModal(order);
+        });
         
         return card;
     }
     
     // 打开修改订单弹窗
     function openModifyModal(order) {
-        document.getElementById('modify-symbol').textContent = order.symbol;
+        document.getElementById('modify-symbol').textContent = order.symbol.replace('-SWAP', '');
         document.getElementById('modify-type').textContent = order.type === 'stop-limit' ? '止盈止损限价' : '止盈止损市价';
         document.getElementById('modify-side').textContent = order.side === 'buy' ? '买入' : '卖出';
-        document.getElementById('new-price').value = order.price || '';
-        document.getElementById('new-trigger-price').value = order.trigger_price || '';
+        document.getElementById('new-tp-trigger-price').value = order.tp_trigger_price || '';
+        document.getElementById('new-tp-ord-price').value = order.tp_ord_price || '';
+        document.getElementById('new-sl-trigger-price').value = order.sl_trigger_price || '';
         document.getElementById('new-amount').value = order.amount;
-        
-        if (order.type === 'stop-market') {
-            document.getElementById('new-price').disabled = true;
-            document.getElementById('new-price').placeholder = '市价订单不需要设置价格';
-        } else {
-            document.getElementById('new-price').disabled = false;
-            document.getElementById('new-price').placeholder = '';
-        }
         
         document.getElementById('modify-modal').classList.remove('hidden');
     }
@@ -296,19 +354,69 @@
         currentOrder = null;
     }
     
+    // 打开取消订单弹窗
+    function openCancelModal(order) {
+        document.getElementById('cancel-symbol').textContent = order.symbol.replace('-SWAP', '');
+        document.getElementById('cancel-order-id').textContent = order.id;
+        
+        document.getElementById('cancel-modal').classList.remove('hidden');
+    }
+    
+    // 关闭取消订单弹窗
+    function closeCancelModal() {
+        document.getElementById('cancel-modal').classList.add('hidden');
+        currentOrder = null;
+    }
+    
+    // 确认取消订单
+    function confirmCancelOrder() {
+        if (currentOrder) {
+            fetch('/api/cancel_stop_order', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    order_id: currentOrder.id,
+                    symbol: currentOrder.symbol
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('止盈止损订单取消成功', 'success');
+                    closeCancelModal();
+                    loadStopOrders();
+                } else {
+                    showToast(`取消止盈止损订单失败: ${data.error || '未知错误'}`, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('取消止盈止损订单失败:', error);
+                showToast('取消止盈止损订单时发生网络错误', 'error');
+            });
+        }
+    }
+    
     // 确认修改订单
     function confirmModifyOrder() {
-        const newPrice = currentOrder.type === 'stop-limit' ? parseFloat(document.getElementById('new-price').value) : null;
-        const newTriggerPrice = parseFloat(document.getElementById('new-trigger-price').value);
+        const newTpTriggerPrice = parseFloat(document.getElementById('new-tp-trigger-price').value);
+        const newTpOrdPrice = parseFloat(document.getElementById('new-tp-ord-price').value);
+        const newSlTriggerPrice = parseFloat(document.getElementById('new-sl-trigger-price').value);
         const newAmount = parseFloat(document.getElementById('new-amount').value);
         
-        if (currentOrder.type === 'stop-limit' && (isNaN(newPrice) || newPrice <= 0)) {
-            showToast('价格必须为正数', 'error');
+        if (isNaN(newTpTriggerPrice) || newTpTriggerPrice <= 0) {
+            showToast('止盈触发价格必须为正数', 'error');
             return;
         }
         
-        if (isNaN(newTriggerPrice) || newTriggerPrice <= 0) {
-            showToast('触发价格必须为正数', 'error');
+        if (isNaN(newTpOrdPrice) || newTpOrdPrice <= 0) {
+            showToast('止盈委托价格必须为正数', 'error');
+            return;
+        }
+        
+        if (isNaN(newSlTriggerPrice) || newSlTriggerPrice <= 0) {
+            showToast('止损触发价格必须为正数', 'error');
             return;
         }
         
@@ -326,8 +434,9 @@
                 body: JSON.stringify({
                     order_id: currentOrder.id,
                     symbol: currentOrder.symbol,
-                    new_price: newPrice,
-                    new_trigger_price: newTriggerPrice,
+                    new_tp_trigger_price: newTpTriggerPrice,
+                    new_tp_ord_price: newTpOrdPrice,
+                    new_sl_trigger_price: newSlTriggerPrice,
                     new_amount: newAmount
                 })
             })
@@ -407,6 +516,17 @@
         document.getElementById('close-modify-modal').addEventListener('click', closeModifyModal);
         document.getElementById('cancel-modify').addEventListener('click', closeModifyModal);
         document.getElementById('confirm-modify').addEventListener('click', confirmModifyOrder);
+        
+        // 取消订单弹窗事件
+        document.getElementById('cancel-cancel').addEventListener('click', closeCancelModal);
+        document.getElementById('confirm-cancel').addEventListener('click', confirmCancelOrder);
+        
+        // 点击模态框背景关闭模态框
+        document.getElementById('cancel-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('cancel-modal')) {
+                closeCancelModal();
+            }
+        });
         
         // 搜索框事件
         document.getElementById('order-search').addEventListener('input', applySearch);

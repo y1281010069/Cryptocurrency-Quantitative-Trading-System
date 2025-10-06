@@ -1108,87 +1108,115 @@ if __name__ == '__main__':
 # ====================== 新增功能：止盈止损订单、当前仓位和历史仓位 ======================
 
 
+@app.route('/api/cancel_stop_order', methods=['POST'])
+def api_cancel_stop_order():
+    """API接口，取消OKX止盈止损订单"""
+    print("=== 收到/api/cancel_stop_order请求 ===")
+    try:
+        # 获取请求参数
+        data = request.get_json()
+        order_id = data.get('order_id')
+        symbol = data.get('symbol')
+        
+        if not order_id or not symbol:
+            return jsonify({
+                'success': False,
+                'error': '缺少必要参数: order_id, symbol'
+            })
+        
+        # 打印请求信息
+        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"取消止盈止损订单: {order_id}, {symbol}")
+        
+        # 取消止盈止损订单
+        result = cancel_okx_stop_order(order_id, symbol)
+        
+        if result:
+            print("止盈止损订单取消成功")
+            return jsonify({
+                'success': True,
+                'message': '止盈止损订单取消成功'
+            })
+        else:
+            print("止盈止损订单取消失败")
+            return jsonify({
+                'success': False,
+                'error': '止盈止损订单取消失败'
+            })
+    except Exception as e:
+        print(f"取消止盈止损订单时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'errorType': type(e).__name__
+        })
+
+
+
+
+
+
+
 def get_okx_stop_orders():
-    """获取OKX交易所的止盈止损订单数据"""
+    """获取OKX交易所的止盈止损订单数据，使用官方SDK的orders-algo-pending接口"""
     print("=== 开始获取OKX止盈止损订单数据 ===")
-    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
-    if not okx_exchange:
-        print("OKX连接状态: 未连接 - 将返回空数据")
+    # 如果没有成功连接到OKX官方API或API密钥未配置，返回空数据
+    if not okx_official_api:
+        print("OKX官方API实例未初始化 - 将返回空数据")
         return []
     
     try:
-        print("正在调用OKX API获取止盈止损订单...")
+        print("正在调用OKX官方API /api/v5/trade/orders-algo-pending获取止盈止损订单...")
         
-        # CCXT的fetch_open_orders默认不支持直接过滤止盈止损订单
-        # 对于OKX，我们需要使用不同的方法来获取止盈止损订单
+        # 使用OKX官方API调用orders-algo-pending接口，指定instType为SWAP
+        # 止盈止损订单类型可以是：conditional, oco, trigger, iceberg, twap
+        response = okx_official_api.order_algos_list(
+            instType='SWAP',  # 指定合约类型为永续合约
+            ordType='conditional,oco',  # 止盈止损相关的算法订单类型
+            limit='100'  # 获取最多100条记录
+        )
         
-        # 方法1: 首先尝试使用OKX特有的API方法
-        if hasattr(okx_exchange, 'private_get_trading_stoporders_pending'):
-            try:
-                print("尝试使用OKX特有API方法获取止盈止损订单...")
-                # 调用OKX特有的API方法获取止盈止损订单
-                response = okx_exchange.private_get_trading_stoporders_pending()
-                
-                # 解析响应
-                if isinstance(response, dict) and 'data' in response:
-                    stop_orders = response['data']
-                    print(f"成功获取到{len(stop_orders)}个止盈止损订单")
-                    
-                    # 格式化订单数据
-                    formatted_orders = []
-                    for order in stop_orders:
-                        # 构建符合我们格式的订单数据
-                        formatted_order = {
-                            'id': order.get('ordId', ''),
-                            'symbol': order.get('instId', ''),
-                            'type': order.get('ordType', ''),
-                            'side': order.get('side', ''),
-                            'price': float(order.get('px', 0)) if order.get('px') else None,
-                            'trigger_price': float(order.get('triggerPx', 0)) if order.get('triggerPx') else None,
-                            'amount': float(order.get('sz', 0)),
-                            'remaining': float(order.get('sz', 0)) - float(order.get('accFillSz', 0)) if order.get('sz') and order.get('accFillSz') else 0,
-                            'status': order.get('state', ''),
-                            'datetime': datetime.fromtimestamp(int(order.get('cTime', '0')) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('cTime') else '',
-                            'description': f"{order.get('side', '').capitalize()} {order.get('ordType', '')} {order.get('instId', '')}"
-                        }
-                        formatted_orders.append(formatted_order)
-                    
-                    return formatted_orders
-            except Exception as e:
-                print(f"使用OKX特有API方法时出错: {e}")
-                
-        # 方法2: 如果方法1失败，尝试获取所有订单并手动过滤
-        print("尝试获取所有未成交订单并手动过滤止盈止损订单...")
-        all_orders = okx_exchange.fetch_open_orders()
-        
-        # 过滤出止盈止损订单
-        stop_orders = []
-        for order in all_orders:
-            # 检查是否是止盈止损订单
-            if 'triggerPrice' in order and order['triggerPrice'] is not None:
-                stop_orders.append(order)
-        
-        print(f"成功获取到{len(stop_orders)}个止盈止损订单")
-        
-        # 格式化订单数据
-        formatted_orders = []
-        for order in stop_orders:
-            formatted_order = {
-                'id': order.get('id', ''),
-                'symbol': order.get('symbol', ''),
-                'type': order.get('type', ''),
-                'side': order.get('side', ''),
-                'price': float(order.get('price', 0)) if order.get('price') else None,
-                'trigger_price': float(order.get('triggerPrice', 0)) if order.get('triggerPrice') else None,
-                'amount': float(order.get('amount', 0)),
-                'remaining': float(order.get('remaining', 0)),
-                'status': order.get('status', ''),
-                'datetime': datetime.fromtimestamp(order.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('timestamp') else '',
-                'description': '止盈止损订单'
-            }
-            formatted_orders.append(formatted_order)
-        
-        return formatted_orders
+        # 检查响应是否成功
+        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0' and 'data' in response:
+            stop_orders = response['data']
+            print(f"成功获取到{len(stop_orders)}个止盈止损订单")
+            
+            # 格式化订单数据
+            formatted_orders = []
+            for order in stop_orders:
+                # 构建符合我们格式的订单数据
+                formatted_order = {
+                    'id': order.get('algoId', ''),
+                    'symbol': order.get('instId', ''),
+                    'type': order.get('ordType', ''),
+                    'side': order.get('side', ''),
+                    'price': float(order.get('ordPx', 0)) if order.get('ordPx') else None,
+                    'trigger_price': float(order.get('triggerPx', 0)) if order.get('triggerPx') else None,
+                    # 添加止盈相关字段
+                    'tp_trigger_price': float(order.get('tpTriggerPx', 0)) if order.get('tpTriggerPx') else None,
+                    'tp_ord_price': float(order.get('tpOrdPx', 0)) if order.get('tpOrdPx') else None,
+                    'tp_trigger_type': order.get('tpTriggerPxType', ''),
+                    # 添加止损相关字段
+                    'sl_trigger_price': float(order.get('slTriggerPx', 0)) if order.get('slTriggerPx') else None,
+                    'sl_ord_price': float(order.get('slOrdPx', 0)) if order.get('slOrdPx') else None,
+                    'sl_trigger_type': order.get('slTriggerPxType', ''),
+                    # 其他原有字段
+                    'amount': float(order.get('sz', 0)) if order.get('sz') else 0,
+                    'remaining': float(order.get('sz', 0)) if order.get('sz') else 0,  # 算法订单没有部分成交的概念
+                    'status': order.get('state', ''),
+                    'datetime': datetime.fromtimestamp(int(order.get('cTime', '0')) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('cTime') else '',
+                    'description': f"{order.get('side', '').capitalize()} {order.get('ordType', '')} {order.get('instId', '')}"
+                }
+                formatted_orders.append(formatted_order)
+            
+            return formatted_orders
+        else:
+            error_msg = response.get('msg', '未知错误') if response else '无响应'
+            print(f"获取止盈止损订单数据失败，响应: {error_msg}")
+            return []
     except Exception as e:
         print(f"获取止盈止损订单数据时发生错误: {e}")
         # 打印更详细的错误信息
@@ -1197,24 +1225,81 @@ def get_okx_stop_orders():
         return []
 
 
-def modify_okx_stop_order(order_id, symbol, new_price, new_trigger_price, new_amount):
-    """修改OKX交易所的止盈止损订单"""
-    print(f"=== 开始修改OKX止盈止损订单: {order_id}, {symbol} ===")
-    # 如果没有成功连接到OKX，返回失败
-    if not okx_exchange:
-        print("OKX连接状态: 未连接 - 无法修改订单")
+def cancel_okx_stop_order(order_id, symbol):
+    """取消OKX交易所的止盈止损订单，使用官方SDK的cancel_algo_order接口"""
+    print(f"=== 开始取消OKX止盈止损订单: {order_id}, {symbol} ===")
+    # 如果没有成功连接到OKX官方API或API密钥未配置，返回失败
+    if not okx_official_api:
+        print("OKX官方API实例未初始化 - 无法取消订单")
         return False
     
     try:
-        print(f"正在调用OKX API修改止盈止损订单...")
-        # 注意：实际的API调用可能需要不同的方法
-        # 这里采用先取消再重新下单的方式来模拟修改操作
-        cancel_result = cancel_okx_order(order_id, symbol)
-        if cancel_result:
-            # 重新下单（简化示例）
-            print(f"订单已取消，将重新创建止盈止损订单")
+        print("正在调用OKX官方API /api/v5/trade/cancel-algos取消止盈止损订单...")
+        # 使用OKX官方API调用cancel_algo_order接口取消算法订单
+        response = okx_official_api.cancel_algo_order(
+            algoId=order_id,
+            instId=symbol
+        )
+        
+        # 检查响应是否成功
+        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0':
+            print(f"止盈止损订单取消成功: {order_id}")
             return True
+        else:
+            error_msg = response.get('msg', '未知错误') if response else '无响应'
+            print(f"止盈止损订单取消失败: {error_msg}")
+            return False
+    except Exception as e:
+        print(f"取消止盈止损订单时发生错误: {e}")
+        # 打印更详细的错误信息
+        import traceback
+        print(f"错误堆栈:\n{traceback.format_exc()}")
         return False
+
+
+def modify_okx_stop_order(order_id, symbol, new_tp_ord_price, new_tp_trigger_price, new_amount, new_sl_trigger_price):
+    """修改OKX交易所的止盈止损订单，使用官方SDK的amend-algo-order接口"""
+    print(f"=== 开始修改OKX止盈止损订单: {order_id}, {symbol} ===")
+    
+    # 如果没有成功连接到OKX官方API或API密钥未配置，返回失败
+    if not okx_official_api:
+        print("OKX官方API实例未初始化 - 无法修改订单")
+        return False
+    
+    try:
+        print(f"正在使用OKX官方SDK的amend-algo-order接口修改止盈止损订单...")
+        
+        # 构建修改算法订单的参数
+        amend_params = {
+            'algoId': order_id,
+            'instId': symbol
+        }
+        
+        # 添加可以修改的参数
+        if new_tp_ord_price is not None:
+            amend_params['newTpOrdPx'] = str(new_tp_ord_price)
+        if new_tp_trigger_price is not None:
+            amend_params['newTpTriggerPx'] = str(new_tp_trigger_price)
+        if new_sl_trigger_price is not None:
+            amend_params['newSlTriggerPx'] = str(new_sl_trigger_price)
+        if new_amount is not None:
+            amend_params['newSz'] = str(new_amount)
+        
+        # 使用OKX官方API调用amend-algo-order接口修改算法订单
+        response = okx_official_api.amend_algo_order(**amend_params)
+        
+        # 检查响应是否成功
+        if response and isinstance(response, dict) and 'code' in response:
+            if response['code'] == '0':
+                print(f"止盈止损订单修改成功")
+                return True
+            else:
+                error_msg = response.get('msg', '未知错误')
+                print(f"修改止盈止损订单失败: {error_msg}")
+                return False
+        else:
+            print(f"修改止盈止损订单失败，无有效响应")
+            return False
     except Exception as e:
         print(f"修改止盈止损订单时发生错误: {e}")
         # 打印更详细的错误信息
@@ -1597,8 +1682,9 @@ def api_modify_stop_order():
         data = request.get_json()
         order_id = data.get('order_id')
         symbol = data.get('symbol')
-        new_price = data.get('new_price')
-        new_trigger_price = data.get('new_trigger_price')
+        new_tp_trigger_price = data.get('new_tp_trigger_price')
+        new_tp_ord_price = data.get('new_tp_ord_price')
+        new_sl_trigger_price = data.get('new_sl_trigger_price')
         new_amount = data.get('new_amount')
         
         if not order_id or not symbol or new_amount is None:
@@ -1609,8 +1695,9 @@ def api_modify_stop_order():
         
         # 转换价格和数量为浮点数
         try:
-            new_price = float(new_price) if new_price is not None else None
-            new_trigger_price = float(new_trigger_price) if new_trigger_price is not None else None
+            new_tp_trigger_price = float(new_tp_trigger_price) if new_tp_trigger_price is not None else None
+            new_tp_ord_price = float(new_tp_ord_price) if new_tp_ord_price is not None else None
+            new_sl_trigger_price = float(new_sl_trigger_price) if new_sl_trigger_price is not None else None
             new_amount = float(new_amount)
         except ValueError:
             return jsonify({
@@ -1620,10 +1707,10 @@ def api_modify_stop_order():
         
         # 打印请求信息
         print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"修改止盈止损订单: {order_id}, {symbol}, 新价格: {new_price}, 新触发价格: {new_trigger_price}, 新数量: {new_amount}")
+        print(f"修改止盈止损订单: {order_id}, {symbol}, 新止盈触发价格: {new_tp_trigger_price}, 新止盈委托价格: {new_tp_ord_price}, 新止损触发价格: {new_sl_trigger_price}, 新数量: {new_amount}")
         
         # 修改订单
-        result = modify_okx_stop_order(order_id, symbol, new_price, new_trigger_price, new_amount)
+        result = modify_okx_stop_order(order_id, symbol, new_tp_ord_price, new_tp_trigger_price, new_amount, new_sl_trigger_price)
         
         if result:
             print("止盈止损订单修改成功")
