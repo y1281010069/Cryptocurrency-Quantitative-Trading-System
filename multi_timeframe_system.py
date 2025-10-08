@@ -513,8 +513,13 @@ class MultiTimeframeProfessionalSystem:
                 if matched_opportunity:
                     # 多头仓位逻辑
                     if pos_side == 'long':
-                        # 检查是否出现卖出信号或所有周期都为观察
+                        # 检查是否出现卖出信号、任何周期为卖出信号或所有周期都为观察
                         if ('卖出' in matched_opportunity.overall_action or 
+                            '卖出' in matched_opportunity.weekly_trend or 
+                            '卖出' in matched_opportunity.daily_trend or 
+                            '卖出' in matched_opportunity.h4_signal or 
+                            '卖出' in matched_opportunity.h1_signal or 
+                            '卖出' in matched_opportunity.m15_signal or 
                             (matched_opportunity.weekly_trend == '观望' and 
                              matched_opportunity.daily_trend == '观望' and 
                              matched_opportunity.h4_signal == '观望' and 
@@ -533,8 +538,13 @@ class MultiTimeframeProfessionalSystem:
                             })
                     # 空头仓位逻辑
                     elif pos_side == 'short':
-                        # 检查是否出现买入信号或所有周期都为观察
+                        # 检查是否出现买入信号、任何周期为买入信号或所有周期都为观察
                         if ('买入' in matched_opportunity.overall_action or 
+                            '买入' in matched_opportunity.weekly_trend or 
+                            '买入' in matched_opportunity.daily_trend or 
+                            '买入' in matched_opportunity.h4_signal or 
+                            '买入' in matched_opportunity.h1_signal or 
+                            '买入' in matched_opportunity.m15_signal or 
                             (matched_opportunity.weekly_trend == '观望' and 
                              matched_opportunity.daily_trend == '观望' and 
                              matched_opportunity.h4_signal == '观望' and 
@@ -728,6 +738,17 @@ class MultiTimeframeProfessionalSystem:
         for op in opportunities:
             # 检查是否是买入信号且评分达到阈值
             if op.total_score >= TRADING_CONFIG['BUY_THRESHOLD'] and op.overall_action == "买入":
+                # 检查任一周期是否有卖出信号，如果有则过滤掉
+                has_sell_signal = ("卖出" in op.weekly_trend or 
+                                  "卖出" in op.daily_trend or 
+                                  "卖出" in op.h4_signal or 
+                                  "卖出" in op.h1_signal or 
+                                  "卖出" in op.m15_signal)
+                
+                if has_sell_signal:
+                    logger.info(f"{op.symbol} 买入信号因任一周期有卖出信号而被过滤掉")
+                    continue
+                
                 # 应用时间框架过滤
                 filter_by_15m = TRADING_CONFIG.get('FILTER_BY_15M', False)
                 filter_by_1h = TRADING_CONFIG.get('FILTER_BY_1H', False)
@@ -756,6 +777,17 @@ class MultiTimeframeProfessionalSystem:
                         
             # 卖出信号应用时间框架过滤
             elif op.total_score <= TRADING_CONFIG['SELL_THRESHOLD'] and op.overall_action == "卖出":
+                # 检查任一周期是否有买入信号，如果有则过滤掉
+                has_buy_signal = ("买入" in op.weekly_trend or 
+                                  "买入" in op.daily_trend or 
+                                  "买入" in op.h4_signal or 
+                                  "买入" in op.h1_signal or 
+                                  "买入" in op.m15_signal)
+                
+                if has_buy_signal:
+                    logger.info(f"{op.symbol} 卖出信号因任一周期有买入信号而被过滤掉")
+                    continue
+                
                 # 应用时间框架过滤
                 filter_by_15m = TRADING_CONFIG.get('FILTER_BY_15M', False)
                 filter_by_1h = TRADING_CONFIG.get('FILTER_BY_1H', False)
