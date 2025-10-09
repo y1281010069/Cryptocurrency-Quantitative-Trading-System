@@ -520,12 +520,7 @@ class MultiTimeframeProfessionalSystem:
                             '卖出' in matched_opportunity.daily_trend or 
                             '卖出' in matched_opportunity.h4_signal or 
                             '卖出' in matched_opportunity.h1_signal or 
-                            '卖出' in matched_opportunity.m15_signal or 
-                            (matched_opportunity.weekly_trend == '观望' and 
-                             matched_opportunity.daily_trend == '观望' and 
-                             matched_opportunity.h4_signal == '观望' and 
-                             matched_opportunity.h1_signal == '观望' and 
-                             matched_opportunity.m15_signal == '观望')):
+                            '卖出' in matched_opportunity.m15_signal):
                             # 记录需要关注的持仓
                             positions_needing_attention.append({
                                 'symbol': symbol,
@@ -545,12 +540,7 @@ class MultiTimeframeProfessionalSystem:
                             '买入' in matched_opportunity.daily_trend or 
                             '买入' in matched_opportunity.h4_signal or 
                             '买入' in matched_opportunity.h1_signal or 
-                            '买入' in matched_opportunity.m15_signal or 
-                            (matched_opportunity.weekly_trend == '观望' and 
-                             matched_opportunity.daily_trend == '观望' and 
-                             matched_opportunity.h4_signal == '观望' and 
-                             matched_opportunity.h1_signal == '观望' and 
-                             matched_opportunity.m15_signal == '观望')):
+                            '买入' in matched_opportunity.m15_signal):
                             # 记录需要关注的持仓
                             positions_needing_attention.append({
                                 'symbol': symbol,
