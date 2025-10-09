@@ -200,18 +200,19 @@ class MultiTimeframeProfessionalSystem:
         score = 0
         
         # 趋势评分
-        if current_price > sma_20 > sma_50:
-            score += 2
-        elif current_price > sma_20:
-            score += 1
-        elif current_price < sma_20 < sma_50:
-            score -= 2
-        elif current_price < sma_20:
-            score -= 1
+        if (timeframe != "15m"):
+            if current_price > sma_20 > sma_50:
+                score += 2
+            elif current_price > sma_20:
+                score += 1
+            elif current_price < sma_20 < sma_50:
+                score -= 2
+            elif current_price < sma_20:
+                score -= 1
         
         # RSI评分
         if 30 < rsi < 70:
-            score += 1
+            score += 0
         elif rsi < 30:
             score += 2  # 超卖
         elif rsi > 70:
