@@ -183,7 +183,8 @@ class MultiTimeframeProfessionalSystem:
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
-        rsi = (100 - (100 / (1 + rs))).iloc[-1]
+        rsi_series = 100 - (100 / (1 + rs))
+        rsi = rsi_series.iloc[-1]
         
         # 计算ATR (平均真实波动幅度)
         atr_value = calculate_atr(df.copy())
@@ -192,9 +193,6 @@ class MultiTimeframeProfessionalSystem:
         volume_avg = df['volume'].rolling(20).mean().iloc[-1]
         volume_current = df['volume'].iloc[-1]
         volume_ratio = volume_current / volume_avg if volume_avg > 0 else 1
-        
-        # 计算ATR值
-        atr_value = calculate_atr(df.copy())
         
         # 评分系统
         score = 0
@@ -211,12 +209,23 @@ class MultiTimeframeProfessionalSystem:
                 score -= 1
         
         # RSI评分
-        if 30 < rsi < 70:
-            score += 0
-        elif rsi < 30:
-            score += 2  # 超卖
-        elif rsi > 70:
-            score -= 2  # 超买
+        if timeframe == "15m" and len(rsi_series) >= 2:
+            # 15分钟时间框架特殊处理 - 交叉分析
+            prev_rsi = rsi_series.iloc[-2]
+            if prev_rsi < 30 and rsi > 30:
+                score += 2  # 前一根k小于30，当前k大于30 +2分
+            elif prev_rsi > 70 and rsi < 70:
+                score -= 2  # 前一根k大于70，当前k小于70 -2分
+            elif 30 < rsi < 70:
+                score += 0
+        else:
+            # 其他时间框架保持原有逻辑
+            if 30 < rsi < 70:
+                score += 0
+            elif rsi < 30:
+                score += 2  # 超卖
+            elif rsi > 70:
+                score -= 2  # 超买
         
         # 成交量评分
         if volume_ratio > 1.5:
@@ -910,7 +919,7 @@ class MultiTimeframeProfessionalSystem:
                         'stop_win_price': signal.target_short,
                         'stop_loss_price': signal.stop_loss,
                         'ac_type': ac_type,
-                        'loss': 1
+                        'loss': TRADING_CONFIG['LOSS']
                     }
                     
                     # 发送POST请求（表单形式）
