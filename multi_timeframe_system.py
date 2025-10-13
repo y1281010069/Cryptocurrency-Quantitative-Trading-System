@@ -528,8 +528,7 @@ class MultiTimeframeProfessionalSystem:
                             '卖出' in matched_opportunity.weekly_trend or 
                             '卖出' in matched_opportunity.daily_trend or 
                             '卖出' in matched_opportunity.h4_signal or 
-                            '卖出' in matched_opportunity.h1_signal or 
-                            '卖出' in matched_opportunity.m15_signal):
+                            '卖出' in matched_opportunity.h1_signal):
                             # 记录需要关注的持仓
                             positions_needing_attention.append({
                                 'symbol': symbol,
@@ -538,7 +537,7 @@ class MultiTimeframeProfessionalSystem:
                                 'entry_price': position.get('entry_price', 0),
                                 'current_price': position.get('current_price', 0),
                                 'profit_percent': position.get('profit_percent', 0),
-                                'signal_action': matched_opportunity.overall_action,
+                                'signal_action': '多头出发卖出',
                                 'confidence_level': matched_opportunity.confidence_level
                             })
                     # 空头仓位逻辑
@@ -548,8 +547,7 @@ class MultiTimeframeProfessionalSystem:
                             '买入' in matched_opportunity.weekly_trend or 
                             '买入' in matched_opportunity.daily_trend or 
                             '买入' in matched_opportunity.h4_signal or 
-                            '买入' in matched_opportunity.h1_signal or 
-                            '买入' in matched_opportunity.m15_signal):
+                            '买入' in matched_opportunity.h1_signal):
                             # 记录需要关注的持仓
                             positions_needing_attention.append({
                                 'symbol': symbol,
@@ -558,7 +556,7 @@ class MultiTimeframeProfessionalSystem:
                                 'entry_price': position.get('entry_price', 0),
                                 'current_price': position.get('current_price', 0),
                                 'profit_percent': position.get('profit_percent', 0),
-                                'signal_action': matched_opportunity.overall_action,
+                                'signal_action': '空头触发买入',
                                 'confidence_level': matched_opportunity.confidence_level
                             })
                 else:
@@ -657,12 +655,10 @@ class MultiTimeframeProfessionalSystem:
                             logger.info(f"成功发送持仓信息到API: {pos['symbol']} ({pos['direction']})")
                         else:
                             logger.warning(f"发送持仓信息到API失败 (状态码: {response.status_code}): {pos['symbol']}")
-                            logger.debug(f"API响应: {response.text}")
-                        
+                            logger.debug(f"API响应: {response.text}")        
                     except Exception as e:
                         logger.error(f"发送持仓信息到API时发生错误: {e}")
                 
-
             else:
                 print("✅ 所有持仓状态正常")
         
