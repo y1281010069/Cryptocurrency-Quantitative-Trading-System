@@ -68,7 +68,10 @@ TRADING_CONFIG = {
     'MAX_POSITIONS': 10,      # 最大持仓数量限制，超过此数量将放弃新的交易机会
     
     # 交易机制ID
-    'MECHANISM_ID': 13        # 交易机制唯一标识
+    'MECHANISM_ID': 13,        # 交易机制唯一标识
+    
+    # 损失配置
+    'LOSS': 1                  # 损失参数配置
 }
 
 if __name__ == "__main__":
