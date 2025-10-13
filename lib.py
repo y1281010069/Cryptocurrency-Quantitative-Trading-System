@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+import requests
 from datetime import datetime
 
 # 配置日志
@@ -128,3 +129,99 @@ def get_okx_positions(exchange, use_contract_utils=False):
     except Exception as e:
         logger.error(f"获取仓位数据失败: {e}")
         return []
+
+def send_trading_signal_to_api(signal, name, logger_param=None):
+    """发送交易信号到API
+    
+    Args:
+        signal: 交易信号对象，包含symbol、overall_action、target_short、stop_loss等属性
+        name: 信号名称
+        logger_param: 可选的日志记录器，如果不提供则使用默认logger
+    
+    Returns:
+        bool: 是否成功发送信号
+    """
+    # 使用提供的logger或默认logger
+    log = logger_param if logger_param is not None else logger
+    
+    try:
+        # 设置ac_type参数：买入对应o_l，卖出对应o_s
+        ac_type = 'o_l' if signal.overall_action == '买入' else 'o_s'
+        
+        # 构造请求参数
+        payload = {
+            'name': name,
+            'mechanism_id': TRADING_CONFIG.get('MECHANISM_ID', ''),
+            'stop_win_price': signal.target_short,
+            'stop_loss_price': signal.stop_loss,
+            'ac_type': ac_type,
+            'loss': TRADING_CONFIG.get('LOSS', 1)
+        }
+        
+        # 发送POST请求（表单形式）
+        url = 'http://149.129.66.131:81/myOrder'
+        response = requests.post(url, data=payload, timeout=10)
+        
+        # 记录请求结果
+        if response.status_code == 200:
+            log.info(f"成功发送交易信号到API: {signal.symbol} ({signal.overall_action})")
+            return True
+        else:
+            log.warning(f"发送交易信号到API失败 (状态码: {response.status_code}): {signal.symbol}")
+            log.debug(f"API响应: {response.text}")
+            return False
+    except Exception as e:
+        log.error(f"发送交易信号到API时发生异常: {e}")
+        return False
+
+def send_position_info_to_api(position, name, logger_param=None):
+    """发送持仓信息到API
+    
+    Args:
+        position: 持仓信息字典，包含symbol、direction、amount等键
+        name: 标的名称
+        logger_param: 可选的日志记录器，如果不提供则使用默认logger
+    
+    Returns:
+        bool: 是否成功发送持仓信息
+    """
+    # 使用提供的logger或默认logger
+    log = logger_param if logger_param is not None else logger
+    
+    try:
+        # 设置ac_type参数：多头对应c_l，空头对应c_s
+        ac_type = 'c_l' if position['direction'] == 'long' else 'c_s'
+        
+        # 构造请求参数
+        payload = {
+            'name': name,
+            'mechanism_id': TRADING_CONFIG.get('MECHANISM_ID', ''),
+            'ac_type': ac_type,
+            'volume_plan': position['amount']
+        }
+        
+        # 发送POST请求（表单形式）
+        url = 'http://149.129.66.131:81/myOrder'
+        
+        # 打印接口请求信息
+        log.info(f"发送请求到接口: {url}")
+        log.info(f"请求参数: {payload}")
+        
+        # 发送请求
+        response = requests.post(url, data=payload, timeout=10)
+        
+        # 打印接口返回信息
+        log.info(f"接口返回状态码: {response.status_code}")
+        log.info(f"接口返回内容: {response.text}")
+        
+        # 记录请求结果
+        if response.status_code == 200:
+            log.info(f"成功发送持仓信息到API: {position['symbol']} ({position['direction']})")
+            return True
+        else:
+            log.warning(f"发送持仓信息到API失败 (状态码: {response.status_code}): {position['symbol']}")
+            log.debug(f"API响应: {response.text}")
+            return False
+    except Exception as e:
+        log.error(f"发送持仓信息到API时发生异常: {e}")
+        return False

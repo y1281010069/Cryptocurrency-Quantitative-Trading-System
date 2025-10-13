@@ -22,39 +22,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import os
 import redis
-from lib import calculate_atr, get_okx_positions
+from lib import calculate_atr, get_okx_positions, send_trading_signal_to_api, send_position_info_to_api
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # 尝试导入配置文件，如果不存在则使用默认值
-try:
-    from config import TRADING_CONFIG, REDIS_CONFIG
-except ImportError:
-    # 使用默认配置
-    TRADING_CONFIG = {
-        'BUY_THRESHOLD': 0.5,     # 买入信号评分阈值（大于等于）
-        'SELL_THRESHOLD': -0.5,   # 卖出信号评分阈值（小于等于）
-        'ATR_PERIOD': 14,
-        'TARGET_MULTIPLIER': 4.5,
-        'STOP_LOSS_MULTIPLIER': 3,
-        'ENABLED_SYMBOLS': [],
-        'DISABLED_SYMBOLS': ['USDC/USDT'],
-        
-        # 时间框架过滤配置
-        'FILTER_BY_15M': False,   # 是否按15分钟时间框架过滤（买入信号需要15分钟也为买入）
-        'FILTER_BY_1H': False,    # 是否按1小时时间框架过滤（买入信号需要1小时也为买入）
-        
-        # 持仓控制配置
-        'MAX_POSITIONS': 10       # 最大持仓数量限制，超过此数量将放弃新的交易机会
-    }
-    # 默认Redis配置
-    REDIS_CONFIG = {
-        'ADDR': "localhost:6379",
-        'PASSWORD': ""
-    }
-    logger.warning("配置文件未找到，使用默认配置")
+from config import TRADING_CONFIG, REDIS_CONFIG
 
 @dataclass
 class MultiTimeframeSignal:
@@ -125,7 +100,6 @@ class MultiTimeframeProfessionalSystem:
             logger.error(f"交易所连接失败: {e}")
             raise
             
-
     def save_positions_needing_attention(self, positions):
         """保存需要关注的持仓记录到文件
         
@@ -272,7 +246,7 @@ class MultiTimeframeProfessionalSystem:
             
             for tf, limit in timeframes.items():
                 df = self.get_timeframe_data(symbol, tf, limit)
-                time.sleep(0.3) 
+                time.sleep(0.2) 
                 if not df.empty:
                     action, strength = self.analyze_timeframe(df, tf)
                     data[tf] = df
@@ -398,7 +372,7 @@ class MultiTimeframeProfessionalSystem:
             logger.error(f"多时间框架分析{symbol}失败: {e}")
             return None
     
-    def run_analysis(self, max_symbols: int = 50):
+    def run_analysis(self, max_symbols: int = 70):
         """运行多时间框架分析"""
         print("\n" + "="*80)
         print("🚀 多时间框架专业投资系统启动")
@@ -625,37 +599,8 @@ class MultiTimeframeProfessionalSystem:
                         # 格式化name参数：从KAITO/USDT转换为KAITO（去掉-USDT后缀）
                         name = pos['symbol'].replace('/', '-').replace(':USDT', '')
                         
-                        # 设置ac_type参数：多头对应c_l，空头对应c_s
-                        ac_type = 'c_l' if pos['direction'] == 'long' else 'c_s'
-                        
-                        # 构造请求参数
-                        payload = {
-                            'name': name,
-                            'mechanism_id': TRADING_CONFIG['MECHANISM_ID'],
-                            'ac_type': ac_type,
-                            'volume_plan': pos['amount']
-                        }
-                        
-                        # 发送POST请求（表单形式）
-                        url = 'http://149.129.66.131:81/myOrder'
-
-                        # 打印接口请求信息
-                        logger.info(f"发送请求到接口: {url}")
-                        logger.info(f"请求参数: {payload}")
-                        
-                        # 发送请求
-                        response = requests.post(url, data=payload, timeout=10)
-                        
-                        # 打印接口返回信息
-                        logger.info(f"接口返回状态码: {response.status_code}")
-                        logger.info(f"接口返回内容: {response.text}")
-                        
-                        # 记录请求结果
-                        if response.status_code == 200:
-                            logger.info(f"成功发送持仓信息到API: {pos['symbol']} ({pos['direction']})")
-                        else:
-                            logger.warning(f"发送持仓信息到API失败 (状态码: {response.status_code}): {pos['symbol']}")
-                            logger.debug(f"API响应: {response.text}")        
+                        # 使用lib.py中的send_position_info_to_api方法发送持仓信息
+                        # send_position_info_to_api(pos, name, logger)
                     except Exception as e:
                         logger.error(f"发送持仓信息到API时发生错误: {e}")
                 
@@ -905,30 +850,8 @@ class MultiTimeframeProfessionalSystem:
                     # 格式化name参数：从KAITO/USDT转换为KAITO（去掉-USDT后缀）
                     name = signal.symbol.replace('/', '-').replace(':USDT', '')
                     
-                    # 设置ac_type参数：买入对应o_l，卖出对应o_s
-                    ac_type = 'o_l' if signal.overall_action == '买入' else 'o_s'
-                    
-                    # 构造请求参数
-                    payload = {
-                        'name': name,
-                        'mechanism_id': TRADING_CONFIG['MECHANISM_ID'],
-                        'stop_win_price': signal.target_short,
-                        'stop_loss_price': signal.stop_loss,
-                        'ac_type': ac_type,
-                        'loss': TRADING_CONFIG['LOSS']
-                    }
-                    
-                    # 发送POST请求（表单形式）
-                    url = 'http://149.129.66.131:81/myOrder'
-                    response = requests.post(url, data=payload, timeout=10)
-                    
-                    # 记录请求结果
-                    if response.status_code == 200:
-                        logger.info(f"成功发送交易信号到API: {signal.symbol} ({signal.overall_action})")
-                    else:
-                        logger.warning(f"发送交易信号到API失败 (状态码: {response.status_code}): {signal.symbol}")
-                        logger.debug(f"API响应: {response.text}")
-                    
+                    # 使用lib.py中的send_trading_signal_to_api方法发送交易信号
+                    send_trading_signal_to_api(signal, name, logger)  
                 except Exception as e:
                     logger.error(f"发送交易信号到API时发生错误: {e}")
                     
@@ -984,7 +907,7 @@ def main():
     """主函数"""
     try:
         system = MultiTimeframeProfessionalSystem()
-        system.run_analysis(max_symbols=50)
+        system.run_analysis(max_symbols=70)
     except KeyboardInterrupt:
         print("\n❌ 用户中断分析")
     except Exception as e:
