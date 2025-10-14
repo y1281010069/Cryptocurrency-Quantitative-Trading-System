@@ -17,3 +17,9 @@ python-dotenv>=0.19.0
 # 数据库
 # sqlite3是Python的标准库，不需要单独安装
 pymysql>=1.0.0  # MySQL数据库连接库
+
+# 技术分析库
+TA-Lib>=0.6.7
+
+# 缓存数据库
+redis>=6.0.0

@@ -94,9 +94,7 @@
                 </div>
                 
                 <div class="grid grid-cols-2 gap-2 mb-3">
-                    <div class="text-xs flex items-center text-gray-500">
-                        <i class="fa fa-calendar mr-1"></i>日线: {{ opportunity.dailyTrend }}
-                    </div>
+                
                     <div class="text-xs flex items-center text-gray-500">
                         <i class="fa fa-clock-o mr-1"></i>4H: {{ opportunity.h4Signal }}
                     </div>
@@ -462,16 +460,6 @@
                 <h4 class="text-lg font-bold text-gray-800 mb-3">多时间框架分析</h4>
                 <div class="bg-background rounded-lg p-4">
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                        <div class="flex items-center">
-                            <i class="fa fa-calendar-check-o text-primary mr-2"></i>
-                            <span class="font-medium">周线趋势:</span>
-                            <span class="ml-2">${opportunity.weeklyTrend}</span>
-                        </div>
-                        <div class="flex items-center">
-                            <i class="fa fa-calendar text-primary mr-2"></i>
-                            <span class="font-medium">日线趋势:</span>
-                            <span class="ml-2">${opportunity.dailyTrend}</span>
-                        </div>
                         <div class="flex items-center">
                             <i class="fa fa-clock-o text-primary mr-2"></i>
                             <span class="font-medium">4小时信号:</span>
