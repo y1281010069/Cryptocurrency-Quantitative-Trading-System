@@ -1,6 +1,7 @@
 import numpy as np
 import logging
 import requests
+import numpy as np
 from datetime import datetime
 
 # 配置日志
@@ -143,6 +144,11 @@ def send_trading_signal_to_api(signal, name, logger_param=None):
     """
     # 使用提供的logger或默认logger
     log = logger_param if logger_param is not None else logger
+    
+    # 检查是否启用信号API
+    if not TRADING_CONFIG.get('ENABLE_SIGNAL_API', False):
+        log.info(f"信号API未启用，跳过发送交易信号: {signal.symbol} ({signal.overall_action})")
+        return False
     
     try:
         # 设置ac_type参数：买入对应o_l，卖出对应o_s
