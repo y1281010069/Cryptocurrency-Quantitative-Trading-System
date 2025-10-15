@@ -437,7 +437,8 @@ class MultiTimeframeStrategy(BaseStrategy):
                     )
                     
                     # 调用lib中的函数获取仓位数据
-                    formatted_positions = get_okx_positions(account_api)
+                    formatted_positions = get_okx_positions(self.exchange)
+                    print(formatted_positions)
                     
                     # 提取已持有的标的（格式：KAITO/USDT）
                     held_symbols_converted = []
