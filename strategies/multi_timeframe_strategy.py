@@ -21,8 +21,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib', 'python-okx-master'))
 
 OKX_CONFIG = {
-    'api_key': "9a04569f-5e01-4f1a-85ef-f57e618c4453",
-    'secret': "921EDF96BBA4F7BDA2CDE37972CC3EAA",
+    'api_key': "e890514f-0371-48b2-90be-0a964e810020",
+    'secret': "F201E388F664BC205FF1D6AC6B3F1C5E",
     'passphrase': "Bianhao8@",
     'sandbox': False,  # True=测试环境, False=正式环境
     'timeout': 30000,
@@ -42,8 +42,8 @@ TRADING_CONFIG = {
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
     "FILTER_BY_15M": True,
     "FILTER_BY_1H": False,
-    "MAX_POSITIONS": 3,
-    "MECHANISM_ID": 13,
+    "MAX_POSITIONS": 20,
+    "MECHANISM_ID": 14,
     "LOSS": 0.2
 }
 
