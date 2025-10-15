@@ -48,7 +48,7 @@ def generate_mock_data(symbol, current_price, days=5):
     return df
 
 # 创建一个模拟的multi_timeframe_analysis_new.txt文件
-output_dir = 'multi_timeframe_reports'
+output_dir = 'reports'
 os.makedirs(output_dir, exist_ok=True)
 filename = os.path.join(output_dir, 'multi_timeframe_analysis_new.txt')
 

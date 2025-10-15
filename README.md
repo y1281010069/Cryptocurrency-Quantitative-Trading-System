@@ -102,7 +102,7 @@ python multi_timeframe_system.py
 系统会自动生成分析报告：
 - **Excel报告**: `分析报告/交易分析_YYYYMMDD_HHMMSS.xlsx`
 - **TXT报告**: `分析报告/交易分析_YYYYMMDD_HHMMSS.txt`
-- **多时间框架**: `multi_timeframe_reports/`
+- **多时间框架**: `reports/`
 
 ## 📋 系统要求
 
@@ -233,4 +233,4 @@ MAJOR_PAIRS = [
 <p align="center">
   <b>🚀 让量化交易更智能 | Making Quantitative Trading Smarter</b><br>
   <sub>Professional • Reliable • Profitable</sub>
-</p> 
+</p>

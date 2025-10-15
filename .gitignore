@@ -18,7 +18,7 @@ trade_signals/
 
 # 分析报告和输出文件
 分析报告/
-multi_timeframe_reports/
+reports/
 *.xlsx
 *.csv
 
@@ -164,4 +164,4 @@ temp/
 tmp/
 
 # Windows批处理相关
-*.bat.backup 
+*.bat.backup

@@ -54,7 +54,7 @@ except ImportError:
 app = Flask(__name__)
 
 # 配置默认的报告文件路径
-DEFAULT_REPORT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'multi_timeframe_reports', 'multi_timeframe_analysis_new.txt')
+DEFAULT_REPORT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'reports', 'multi_timeframe_analysis_new.txt')
 
 # 初始化OKX交易所连接
 okx_exchange = None
