@@ -13,6 +13,20 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import logging
+import sys
+
+# 添加项目根目录到路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 添加OKX库到路径
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib', 'python-okx-master'))
+
+OKX_CONFIG = {
+    'api_key': "9a04569f-5e01-4f1a-85ef-f57e618c4453",
+    'secret': "921EDF96BBA4F7BDA2CDE37972CC3EAA",
+    'passphrase': "Bianhao8@",
+    'sandbox': False,  # True=测试环境, False=正式环境
+    'timeout': 30000,
+}
 
 # 策略配置 - 每个策略使用独立配置
 TRADING_CONFIG = {
@@ -33,13 +47,14 @@ TRADING_CONFIG = {
     "LOSS": 0.2
 }
 
-from strategies.base_strategy import BaseStrategy
-from lib import calculate_atr, send_trading_signal_to_api
-
 # 配置日志记录器
 logger = logging.getLogger(__name__)
 
-# 导入其他必要配置
+# 导入项目模块
+from strategies.base_strategy import BaseStrategy
+from lib import calculate_atr, send_trading_signal_to_api
+from okx.Account import AccountAPI
+from lib import get_okx_positions
 from config import REDIS_CONFIG
 
 
@@ -404,42 +419,32 @@ class MultiTimeframeStrategy(BaseStrategy):
                     # 对于非MultiTimeframeSignal类型，应用通用过滤规则
                     trade_signals.append(op)
         
-        # 如果有交易信号，检查Redis中已持有的标的并过滤
+        # 如果有交易信号，检查已持有的标的并过滤
         if len(trade_signals) > 0:
             try:
-                # 连接Redis
-                host, port = REDIS_CONFIG['ADDR'].split(':')
-                r = redis.Redis(
-                    host=host,
-                    port=int(port),
-                    password=REDIS_CONFIG['PASSWORD'],
-                    decode_responses=True,
-                    socket_timeout=5
-                )
+                # 使用OKX接口获取当前仓位
+                print("=== 开始获取OKX当前仓位数据 ===")
                 
-                # 读取okx_positions_data
-                positions_data = r.get('okx_positions_data')
-                
-                if positions_data:
-                    # 解析JSON数据
-                    positions_info = json.loads(positions_data)
+                # 创建OKX AccountAPI实例
+                try:
+                    account_api = AccountAPI(
+                        api_key=OKX_CONFIG['api_key'],
+                        api_secret_key=OKX_CONFIG['secret'],
+                        passphrase=OKX_CONFIG['passphrase'],
+                        use_server_time=True,
+                        flag='1' if OKX_CONFIG['sandbox'] else '0',  # 1=测试环境, 0=正式环境
+                        debug=False
+                    )
                     
-                    # 提取已持有的标的（格式：KAITO-USDT-SWAP）
-                    held_symbols = []
-                    if 'm' in positions_info and 'data' in positions_info['m']:
-                        for pos in positions_info['m']['data']:
-                            if 'instId' in pos:
-                                held_symbols.append(pos['instId'])
+                    # 调用lib中的函数获取仓位数据
+                    formatted_positions = get_okx_positions(account_api)
                     
-                    # 将Redis中的格式（KAITO-USDT-SWAP）转换为系统中的格式（KAITO/USDT）
+                    # 提取已持有的标的（格式：KAITO/USDT）
                     held_symbols_converted = []
-                    for symbol in held_symbols:
-                        # 处理格式转换：KAITO-USDT-SWAP -> KAITO/USDT
-                        parts = symbol.split('-')
-                        if len(parts) >= 3:
-                            # 例如：KAITO-USDT-SWAP -> KAITO/USDT
-                            converted_symbol = f"{parts[0]}/{parts[1]}"
-                            held_symbols_converted.append(converted_symbol)
+                    for position in formatted_positions:
+                        symbol = position.get('symbol', '')
+                        if symbol:
+                            held_symbols_converted.append(symbol)
                     
                     # 检查持仓数量是否超过最大限制
                     max_positions = TRADING_CONFIG.get('MAX_POSITIONS', 10)
@@ -458,11 +463,13 @@ class MultiTimeframeStrategy(BaseStrategy):
                         filtered_count = original_count - len(trade_signals)
                         if filtered_count > 0:
                             logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
-                
+                except Exception as e:
+                    logger.error(f"创建OKX API实例失败: {e}")
+                    # 继续处理交易信号，不中断主流程
             except Exception as e:
-                logger.error(f"Redis连接或数据处理失败: {e}")
-                # 即使Redis出错，也继续处理交易信号，不中断主流程
-        
+                logger.error(f"获取OKX仓位数据时发生错误: {e}")
+                # 即使获取仓位数据出错，也继续处理交易信号，不中断主流程
+
         # 只有当有交易信号时才生成文件
         if len(trade_signals) > 0:
             # 创建交易信号目录
