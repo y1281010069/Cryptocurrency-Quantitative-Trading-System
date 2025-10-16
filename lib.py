@@ -3,6 +3,21 @@ import logging
 import requests
 import numpy as np
 from datetime import datetime
+import json
+import redis
+
+# 尝试导入配置文件，如果不存在则使用默认值
+try:
+    from config import TRADING_CONFIG, REDIS_CONFIG
+except ImportError:
+    # 使用默认配置
+    TRADING_CONFIG = {
+        'ATR_PERIOD': 14
+    }
+    REDIS_CONFIG = {
+        'ADDR': 'localhost:6379',
+        'PASSWORD': None
+    }
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -43,6 +58,35 @@ def get_okx_positions(exchange, use_contract_utils=False):
     Returns:
         list: 格式化后的仓位列表
     """
+    # 尝试连接Redis
+    redis_client = None
+    cache_key = f"okx_positions_{'contract' if use_contract_utils else 'normal'}"
+    
+    try:
+        # 从配置中解析Redis地址和端口
+        addr = REDIS_CONFIG.get('ADDR', 'localhost:6379')
+        host, port = addr.split(':')
+        password = REDIS_CONFIG.get('PASSWORD', None)
+        
+        # 尝试连接Redis
+        redis_client = redis.Redis(
+            host=host,
+            port=int(port),
+            password=password,
+            db=0,
+            socket_connect_timeout=2,
+            socket_timeout=2
+        )
+        redis_client.ping()
+        
+        # 尝试从缓存获取数据
+        cached_data = redis_client.get(cache_key)
+        if cached_data:
+            logger.info(f"从Redis缓存获取仓位数据")
+            return json.loads(cached_data)
+    except Exception as e:
+        logger.warning(f"Redis连接或获取缓存失败: {e}")
+    
     try:
         # 获取所有仓位
         positions = exchange.fetch_positions()
@@ -124,6 +168,18 @@ def get_okx_positions(exchange, use_contract_utils=False):
                 }
             
             formatted_positions.append(formatted_position)
+        
+        # 将结果存入Redis缓存，设置5秒过期
+        if redis_client:
+            try:
+                redis_client.setex(
+                    cache_key,
+                    5,  # 5秒过期时间
+                    json.dumps(formatted_positions)
+                )
+                logger.info(f"仓位数据已存入Redis缓存，5秒后过期")
+            except Exception as e:
+                logger.warning(f"Redis缓存写入失败: {e}")
         
         logger.info(f"成功获取到{len(formatted_positions)}个有效仓位")
         return formatted_positions

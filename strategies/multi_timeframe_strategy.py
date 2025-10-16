@@ -370,10 +370,12 @@ class MultiTimeframeStrategy(BaseStrategy):
                         # 添加止损价格过滤
                         if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
                             price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
-                            if price_diff_percent >= 0.3:
+                            if price_diff_percent >= 0.3 and price_diff_percent <= 10:
                                 trade_signals.append(op)
-                            else:
+                            elif price_diff_percent < 0.3:
                                 logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
+                            else:
+                                logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
                         else:
                             trade_signals.append(op)
                 else:
@@ -409,10 +411,12 @@ class MultiTimeframeStrategy(BaseStrategy):
                         # 添加止损价格过滤
                         if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
                             price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
-                            if price_diff_percent >= 0.3:
+                            if price_diff_percent >= 0.3 and price_diff_percent <= 10:
                                 trade_signals.append(op)
-                            else:
+                            elif price_diff_percent < 0.3:
                                 logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
+                            else:
+                                logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
                         else:
                             trade_signals.append(op)
                 else:

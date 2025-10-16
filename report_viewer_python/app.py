@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import re
 import os
 import sys
@@ -6,7 +6,7 @@ import json
 import time
 import ccxt
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify
+from functools import wraps
 
 # 导入合约工具模块
 import contract_utils
@@ -53,8 +53,61 @@ except ImportError:
 
 app = Flask(__name__)
 
+# 会话配置 - 设置一个安全的密钥用于会话管理
+app.secret_key = 'your-secret-key-here-change-in-production'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # 30天免验证
+
+# 登录验证装饰器
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 # 配置默认的报告文件路径
 DEFAULT_REPORT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'reports', 'multi_timeframe_analysis_new.txt')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """登录页面路由"""
+    if request.method == 'POST':
+        # 支持JSON和表单数据两种方式
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username')
+            password = data.get('password')
+            remember_me = data.get('remember_me', False)
+        else:
+            username = request.form.get('username')
+            password = request.form.get('password')
+            remember_me = request.form.get('remember_me', False)
+        
+        # 验证用户名和密码
+        if username == 'admin' and password == 'adminadmin':
+            # 登录成功
+            session['logged_in'] = True
+            session['username'] = username
+            
+            # 如果选择了"记住我"，设置会话为永久会话（30天）
+            if remember_me or remember_me == 'on':
+                session.permanent = True
+            
+            return jsonify({'success': True, 'message': '登录成功'})
+        else:
+            return jsonify({'success': False, 'message': '用户名或密码错误'})
+    
+    # GET请求，显示登录页面
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    """登出路由"""
+    session.clear()
+    return redirect(url_for('login'))
 
 # 初始化OKX交易所连接
 okx_exchange = None
@@ -851,6 +904,7 @@ def get_asset_name(symbol):
 
 
 @app.route('/')
+@login_required
 def index():
     """主页面路由 - 多时间框架分析报告"""
     # 从URL参数获取报告文件路径
@@ -873,6 +927,7 @@ def index():
 
 
 @app.route('/api/data')
+@login_required
 def api_data():
     """API接口，返回JSON格式的报告数据"""
     report_path = request.args.get('file', DEFAULT_REPORT_PATH)
@@ -881,6 +936,7 @@ def api_data():
 
 
 @app.route('/api/filter')
+@login_required
 def filter_data():
     """API接口，根据筛选条件返回过滤后的数据"""
     # 获取筛选参数
@@ -912,12 +968,14 @@ def filter_data():
 
 @app.route('/balance')
 @app.route('/okx_balance')
+@login_required
 def balance():
     """OKX余额查询页面路由"""
     return render_template('balance.html', now=datetime.now())
 
 
 @app.route('/api/balance')
+@login_required
 def api_balance():
     """API接口，返回OKX账户余额数据"""
     print("=== 收到/api/balance请求 ===")
@@ -945,12 +1003,14 @@ def api_balance():
 
 @app.route('/orders')
 @app.route('/okx_orders')
+@login_required
 def orders():
     """OKX当前挂单查询页面路由"""
     return render_template('orders.html', now=datetime.now())
 
 
 @app.route('/api/orders')
+@login_required
 def api_orders():
     """API接口，返回OKX当前挂单数据"""
     print("=== 收到/api/orders请求 ===")
@@ -977,6 +1037,7 @@ def api_orders():
 
 
 @app.route('/api/cancel_order', methods=['POST'])
+@login_required
 def api_cancel_order():
     """API接口，取消OKX订单"""
     print("=== 收到/api/cancel_order请求 ===")
@@ -1024,6 +1085,7 @@ def api_cancel_order():
 
 
 @app.route('/api/modify_order', methods=['POST'])
+@login_required
 def api_modify_order():
     """API接口，修改OKX订单"""
     print("=== 收到/api/modify_order请求 ===")
@@ -1109,6 +1171,7 @@ if __name__ == '__main__':
 
 
 @app.route('/api/cancel_stop_order', methods=['POST'])
+@login_required
 def api_cancel_stop_order():
     """API接口，取消OKX止盈止损订单"""
     print("=== 收到/api/cancel_stop_order请求 ===")
@@ -1617,12 +1680,14 @@ def get_okx_history_positions():
 # ====================== 新增路由 ======================
 
 @app.route('/stop_orders')
+@login_required
 def stop_orders():
     """止盈止损订单页面路由"""
     return render_template('stop_orders.html', now=datetime.now())
 
 
 @app.route('/api/stop_orders')
+@login_required
 def api_stop_orders():
     """API接口，返回OKX止盈止损订单数据"""
     print("=== 收到/api/stop_orders请求 ===")
@@ -1649,6 +1714,7 @@ def api_stop_orders():
 
 
 @app.route('/api/modify_stop_order', methods=['POST'])
+@login_required
 def api_modify_stop_order():
     """API接口，修改OKX止盈止损订单"""
     print("=== 收到/api/modify_stop_order请求 ===")
@@ -1712,12 +1778,14 @@ def api_modify_stop_order():
 
 
 @app.route('/positions')
+@login_required
 def positions():
     """当前仓位页面路由"""
     return render_template('positions.html', now=datetime.now())
 
 
 @app.route('/api/positions')
+@login_required
 def api_positions():
     """API接口，返回OKX当前仓位数据"""
     print("=== 收到/api/positions请求 ===")
@@ -1744,12 +1812,14 @@ def api_positions():
 
 
 @app.route('/history_positions')
+@login_required
 def history_positions():
     """历史仓位页面路由"""
     return render_template('history_positions.html', now=datetime.now())
 
 
 @app.route('/api/history_positions')
+@login_required
 def api_history_positions():
     """API接口，返回OKX历史仓位数据"""
     print("=== 收到/api/history_positions请求 ===")
@@ -1834,6 +1904,7 @@ def convert_closed_orders_to_trades(closed_orders):
 
 
 @app.route('/trading_config')
+@login_required
 def trading_config():
     """交易配置修改页面路由"""
     return render_template('trading_config.html', now=datetime.now())
