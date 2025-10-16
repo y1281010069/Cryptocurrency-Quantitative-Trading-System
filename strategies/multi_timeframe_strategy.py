@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import logging
 import sys
+import ccxt
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -95,7 +96,29 @@ class MultiTimeframeStrategy(BaseStrategy):
             config = TRADING_CONFIG
         
         super().__init__("MultiTimeframeStrategy", config)
-    
+        self._init_exchange()
+
+    def _init_exchange(self):
+        """初始化交易所连接"""
+        try:
+            # 配置OKX交易所连接
+            # 不设置defaultType，先获取现货交易对数据
+            # 如果需要合约交易，可以在获取具体数据时指定类型
+            self.exchange = ccxt.okx({
+                'apiKey': OKX_CONFIG['api_key'],
+                'secret': OKX_CONFIG['secret'],
+                'password': OKX_CONFIG['passphrase'],
+                'timeout': 30000,
+                'enableRateLimit': True,
+                'options': {
+                    'defaultType': 'spot'  # 默认使用现货市场
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ 交易所连接失败: {e}")
+            raise
+
     def analyze(self, symbol: str, data: Dict[str, pd.DataFrame]) -> Optional[MultiTimeframeSignal]:
         """
         使用多时间框架策略分析交易对
@@ -462,6 +485,9 @@ class MultiTimeframeStrategy(BaseStrategy):
                     else:
                         # 过滤掉已持有的标的
                         original_count = len(trade_signals)
+
+                        # logger.info(f"当前持仓标的: {held_symbols_converted}")
+                        # logger.info(f"当前持仓标的: {trade_signals}")
                         trade_signals = [signal for signal in trade_signals if signal.symbol not in held_symbols_converted]
                         
                         # 记录过滤信息
