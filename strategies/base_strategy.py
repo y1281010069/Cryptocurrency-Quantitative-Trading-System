@@ -8,6 +8,7 @@ import abc
 import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+import logging
 
 
 class BaseStrategy(abc.ABC):
@@ -22,6 +23,7 @@ class BaseStrategy(abc.ABC):
         """
         self.strategy_name = strategy_name
         self.config = config or {}
+        self.exchange = None  # 交易所连接对象
         
     @abc.abstractmethod
     def analyze(self, symbol: str, data: Dict[str, pd.DataFrame]) -> Any:
@@ -58,6 +60,32 @@ class BaseStrategy(abc.ABC):
     def get_config(self) -> Dict[str, Any]:
         """获取当前策略配置"""
         return self.config.copy()
+    
+    def _init_exchange(self):
+        """初始化交易所连接"""
+        try:
+            import ccxt
+            # 配置OKX交易所连接
+            # 从子类获取OKX_CONFIG配置
+            if hasattr(self, 'OKX_CONFIG'):
+                # 配置OKX交易所连接
+                self.exchange = ccxt.okx({
+                    'apiKey': self.OKX_CONFIG['api_key'],
+                    'secret': self.OKX_CONFIG['secret'],
+                    'password': self.OKX_CONFIG['passphrase'],
+                    'timeout': self.OKX_CONFIG.get('timeout', 30000),
+                    'enableRateLimit': True,
+                    'options': {
+                        'defaultType': 'spot'  # 默认使用现货市场
+                    }
+                })
+            else:
+                raise AttributeError("子类必须定义OKX_CONFIG属性")
+            
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ 交易所连接失败: {e}")
+            raise
     
     @abc.abstractmethod
     def save_trade_signals(self, opportunities: List[Any]) -> Optional[str]:

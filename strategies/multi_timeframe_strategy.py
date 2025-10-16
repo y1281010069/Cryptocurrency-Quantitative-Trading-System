@@ -98,26 +98,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         super().__init__("MultiTimeframeStrategy", config)
         self._init_exchange()
 
-    def _init_exchange(self):
-        """初始化交易所连接"""
-        try:
-            # 配置OKX交易所连接
-            # 不设置defaultType，先获取现货交易对数据
-            # 如果需要合约交易，可以在获取具体数据时指定类型
-            self.exchange = ccxt.okx({
-                'apiKey': OKX_CONFIG['api_key'],
-                'secret': OKX_CONFIG['secret'],
-                'password': OKX_CONFIG['passphrase'],
-                'timeout': 30000,
-                'enableRateLimit': True,
-                'options': {
-                    'defaultType': 'spot'  # 默认使用现货市场
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"❌ 交易所连接失败: {e}")
-            raise
+
 
     def analyze(self, symbol: str, data: Dict[str, pd.DataFrame]) -> Optional[MultiTimeframeSignal]:
         """
