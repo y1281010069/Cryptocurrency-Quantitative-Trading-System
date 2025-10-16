@@ -11,10 +11,11 @@ import os
 import redis
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field, make_dataclass
 import logging
 import sys
 import ccxt
+from strategies.condition_analyzer import calculate_trend_indicators_and_score, calculate_rsi_score, calculate_volume_score, calculate_rsi_crossover_score
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,11 +42,15 @@ TRADING_CONFIG = {
         "USDC/USDT"
     ],
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
-    "FILTER_BY_15M": True,
-    "FILTER_BY_1H": False,
     "MAX_POSITIONS": 20,
     "MECHANISM_ID": 14,
-    "LOSS": 0.2
+    "LOSS": 0.2,
+    "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
+    "TIMEFRAME_DATA_LENGTHS": {
+        '4h': 168,   # 4小时
+        '1h': 168,   # 1小时
+        '15m': 168   # 15分钟
+    }  # 不同时间框架所需的数据长度
 }
 
 # 配置日志记录器
@@ -59,30 +64,60 @@ from lib import get_okx_positions
 from config import REDIS_CONFIG
 
 
-@dataclass
-class MultiTimeframeSignal:
-    """多时间框架交易信号"""
-    symbol: str
-    weekly_trend: str
-    daily_trend: str
-    h4_signal: str
-    h1_signal: str
-    m15_signal: str
-    overall_action: str
-    confidence_level: str
-    total_score: float
-    entry_price: float
-    target_short: float  # 1.5倍ATR值 (作为短期目标)
-    target_medium: float  # 保留字段以确保兼容性
-    target_long: float  # 保留字段以确保兼容性
-    stop_loss: float  # 基于1倍ATR反向计算的止损价格
-    atr_one: float  # 保留字段以确保兼容性
-    reasoning: List[str]
-    timestamp: datetime
+# 动态创建MultiTimeframeSignal类
+def create_multi_timeframe_signal_class():
+    # 先定义所有非默认参数
+    non_default_fields = [
+        ('symbol', str),
+        ('weekly_trend', str),
+        ('daily_trend', str),
+        ('overall_action', str),
+        ('confidence_level', str),
+        ('total_score', float),
+        ('entry_price', float),
+        ('target_short', float),
+        ('target_medium', float),
+        ('target_long', float),
+        ('stop_loss', float),
+        ('atr_one', float),
+        ('reasoning', List[str]),
+        ('timestamp', datetime)
+    ]
+    
+    # 从配置中获取所有时间框架作为默认参数字段
+    default_fields = []
+    timeframe_config = TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {})
+    for timeframe in timeframe_config.keys():
+        # 将时间框架格式化为驼峰式命名（例如：4h -> h4_signal, 1h -> h1_signal, 15m -> m15_signal）
+        if timeframe == '4h':
+            field_name = 'h4_signal'
+        elif timeframe == '1h':
+            field_name = 'h1_signal'
+        elif timeframe == '15m':
+            field_name = 'm15_signal'
+        else:
+            # 对于其他时间框架，使用通用格式
+            field_name = f'{timeframe}_signal'
+        default_fields.append((field_name, str, "观望"))
+    
+    # 添加timeframe_signals字典作为默认参数
+    default_fields.append(('timeframe_signals', dict, field(default_factory=dict)))
+    
+    # 组合所有字段，确保非默认参数在前，默认参数在后
+    fields = non_default_fields + default_fields
+    
+    # 创建数据类
+    return make_dataclass('MultiTimeframeSignal', fields)
+
+# 创建MultiTimeframeSignal类
+MultiTimeframeSignal = create_multi_timeframe_signal_class()
 
 
 class MultiTimeframeStrategy(BaseStrategy):
     """多时间框架分析策略实现"""
+    
+    # 将OKX_CONFIG定义为类变量，以满足BaseStrategy的要求
+    OKX_CONFIG = OKX_CONFIG
     
     def __init__(self, config: Dict[str, Any] = None):
         """
@@ -204,6 +239,11 @@ class MultiTimeframeStrategy(BaseStrategy):
             target_medium = 0.0
             target_long = 0.0
             
+            # 创建动态时间框架信号字典，基于TIMEFRAME_DATA_LENGTHS配置
+            timeframe_signals = {}
+            for timeframe in TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {}).keys():
+                timeframe_signals[timeframe] = signals.get(timeframe, '观望')
+            
             return MultiTimeframeSignal(
                 symbol=symbol,
                 weekly_trend="观望",  # 默认值，不再使用
@@ -211,6 +251,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                 h4_signal=signals.get('4h', '观望'),
                 h1_signal=signals.get('1h', '观望'),
                 m15_signal=signals.get('15m', '观望'),
+                timeframe_signals=timeframe_signals,
                 overall_action=overall_action,
                 confidence_level=confidence,
                 total_score=total_score,
@@ -235,66 +276,20 @@ class MultiTimeframeStrategy(BaseStrategy):
             return "观望", 0.0
         
         current_price = df['close'].iloc[-1]
-        
-        # 计算技术指标
-        sma_20 = df['close'].rolling(20).mean().iloc[-1]
-        sma_50 = df['close'].rolling(50).mean() if len(df) >= 50 else pd.Series([current_price])
-        sma_50 = sma_50.iloc[-1] if not sma_50.empty else current_price
-        
-        # RSI
-        delta = df['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi_series = 100 - (100 / (1 + rs))
-        rsi = rsi_series.iloc[-1]
-        
-        # 计算ATR (平均真实波动幅度)
-        atr_value = calculate_atr(df.copy())
-        
-        # 成交量
-        volume_avg = df['volume'].rolling(20).mean().iloc[-1]
-        volume_current = df['volume'].iloc[-1]
-        volume_ratio = volume_current / volume_avg if volume_avg > 0 else 1
-        
+         
         # 评分系统
         score = 0
         
-        # 趋势评分 - 移除1w和1d的特殊判断
-        if (timeframe != "15m"):
-            if current_price > sma_20 > sma_50:
-                score += 2
-            elif current_price > sma_20:
-                score += 1
-            elif current_price < sma_20 < sma_50:
-                score -= 2
-            elif current_price < sma_20:
-                score -= 1
-        
-        # RSI评分
-        if timeframe == "15m" and len(rsi_series) >= 2:
-            # 15分钟时间框架特殊处理 - 交叉分析
-            prev_rsi = rsi_series.iloc[-2]
-            if prev_rsi < 30 and rsi > 30:
-                score += 2  # 前一根k小于30，当前k大于30 +2分
-            elif prev_rsi > 70 and rsi < 70:
-                score -= 2  # 前一根k大于70，当前k小于70 -2分
-            elif 30 < rsi < 70:
-                score += 0
+        # 使用配置的交易信号触发周期
+        if timeframe == self.config["SIGNAL_TRIGGER_TIMEFRAME"]:
+            # 交易信号触发周期只运行RSI交叉评分
+            score += calculate_rsi_crossover_score(df)
         else:
-            # 其他时间框架保持原有逻辑
-            if 30 < rsi < 70:
-                score += 0
-            elif rsi < 30:
-                score += 2  # 超卖
-            elif rsi > 70:
-                score -= 2  # 超买
+            # 非交易信号触发周期运行其他评分方法
+            score += calculate_trend_indicators_and_score(df, current_price, timeframe)
+            score += calculate_rsi_score(df, timeframe)
+            score += calculate_volume_score(df)
         
-        # 成交量评分
-        if volume_ratio > 1.5:
-            score += 1
-        elif volume_ratio < 0.7:
-            score -= 0.5
         
         # 根据时间框架调整权重 - 移除1w和1d的特殊处理
         if timeframe in ['5m', '15m']:
@@ -322,11 +317,11 @@ class MultiTimeframeStrategy(BaseStrategy):
         Returns:
             字典，键为时间框架名称，值为所需数据长度
         """
-        return {
+        return TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {
             '4h': 168,   # 4小时
             '1h': 168,   # 1小时
             '15m': 168   # 15分钟
-        }
+        })
     
     def save_trade_signals(self, opportunities: List[Any]) -> Optional[str]:
         """保存交易信号到文件，并发送到API
@@ -346,31 +341,31 @@ class MultiTimeframeStrategy(BaseStrategy):
                 continue
             
             # 检查是否是买入信号
-            if hasattr(op, 'total_score') and op.total_score >= TRADING_CONFIG.get('BUY_THRESHOLD') and op.overall_action == "买入":
+            if hasattr(op, 'total_score') and op.total_score >= self.config.get('BUY_THRESHOLD') and op.overall_action == "买入":
                 # 如果是MultiTimeframeSignal类型，应用特定的过滤规则
                 if isinstance(op, MultiTimeframeSignal):
                     # 检查任一周期是否有卖出信号
                     has_sell_signal = False
-                    if all(hasattr(op, attr) for attr in ['h4_signal', 'h1_signal', 'm15_signal']):
-                        has_sell_signal = ("卖出" in op.h4_signal or 
-                                          "卖出" in op.h1_signal or 
-                                          "卖出" in op.m15_signal)
+                    # 优先使用timeframe_signals字典检查所有配置的时间框架
+                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
+                        has_sell_signal = any("卖出" in signal for signal in op.timeframe_signals.values())
                     
                     if has_sell_signal:
                         logger.info(f"{op.symbol} 买入信号因任一周期有卖出信号而被过滤掉")
                         continue
                     
-                    # 应用时间框架过滤
-                    filter_by_15m = TRADING_CONFIG.get('FILTER_BY_15M', False)
-                    filter_by_1h = TRADING_CONFIG.get('FILTER_BY_1H', False)
+                    # 应用交易信号触发周期过滤
+                    signal_trigger_timeframe = self.config.get('SIGNAL_TRIGGER_TIMEFRAME', '15m')
                     
-                    # 检查时间框架条件
-                    is_15m_buy = "买入" in op.m15_signal if hasattr(op, 'm15_signal') else True
-                    is_1h_buy = "买入" in op.h1_signal if hasattr(op, 'h1_signal') else True
+                    # 检查交易信号触发周期的条件
+                    # 优先使用timeframe_signals字典
+                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
+                        if signal_trigger_timeframe in op.timeframe_signals:
+                            if "买入" not in op.timeframe_signals[signal_trigger_timeframe]:
+                                continue
+                  
                     
-                    # 根据过滤开关决定是否添加信号
-                    if ((not filter_by_15m or is_15m_buy) and 
-                        (not filter_by_1h or is_1h_buy)):
+                    # 符合交易信号触发周期的条件，继续处理
                         # 添加止损价格过滤
                         if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
                             price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
@@ -387,31 +382,32 @@ class MultiTimeframeStrategy(BaseStrategy):
                     trade_signals.append(op)
                          
             # 检查是否是卖出信号
-            elif hasattr(op, 'total_score') and op.total_score <= TRADING_CONFIG.get('SELL_THRESHOLD') and op.overall_action == "卖出":
+            elif hasattr(op, 'total_score') and op.total_score <= self.config.get('SELL_THRESHOLD') and op.overall_action == "卖出":
                 # 如果是MultiTimeframeSignal类型，应用特定的过滤规则
                 if isinstance(op, MultiTimeframeSignal):
                     # 检查任一周期是否有买入信号
                     has_buy_signal = False
-                    if all(hasattr(op, attr) for attr in ['h4_signal', 'h1_signal', 'm15_signal']):
-                        has_buy_signal = ("买入" in op.h4_signal or 
-                                          "买入" in op.h1_signal or 
-                                          "买入" in op.m15_signal)
+                    # 优先使用timeframe_signals字典检查所有配置的时间框架
+                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
+                        has_buy_signal = any("买入" in signal for signal in op.timeframe_signals.values())
+                  
                      
                     if has_buy_signal:
                         logger.info(f"{op.symbol} 卖出信号因任一周期有买入信号而被过滤掉")
                         continue
                     
-                    # 应用时间框架过滤
-                    filter_by_15m = TRADING_CONFIG.get('FILTER_BY_15M', False)
-                    filter_by_1h = TRADING_CONFIG.get('FILTER_BY_1H', False)
+                    # 应用交易信号触发周期过滤
+                    signal_trigger_timeframe = self.config.get('SIGNAL_TRIGGER_TIMEFRAME', '15m')
                     
-                    # 检查时间框架条件
-                    is_15m_sell = "卖出" in op.m15_signal if hasattr(op, 'm15_signal') else True
-                    is_1h_sell = "卖出" in op.h1_signal if hasattr(op, 'h1_signal') else True
+                    # 检查交易信号触发周期的条件
+                    # 优先使用timeframe_signals字典
+                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
+                        if signal_trigger_timeframe in op.timeframe_signals:
+                            if "卖出" not in op.timeframe_signals[signal_trigger_timeframe]:
+                                continue
+                
                     
-                    # 根据过滤开关决定是否添加信号
-                    if ((not filter_by_15m or is_15m_sell) and 
-                        (not filter_by_1h or is_1h_sell)):
+                    # 符合交易信号触发周期的条件，继续处理
                         # 添加止损价格过滤
                         if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
                             price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
@@ -456,7 +452,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                             held_symbols_converted.append(symbol)
                     
                     # 检查持仓数量是否超过最大限制
-                    max_positions = TRADING_CONFIG.get('MAX_POSITIONS', 10)
+                    max_positions = self.config.get('MAX_POSITIONS', 10)
                     current_position_count = len(held_symbols_converted)
                     
                     if current_position_count >= max_positions:
