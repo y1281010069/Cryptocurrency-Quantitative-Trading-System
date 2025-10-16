@@ -30,7 +30,7 @@ warnings.filterwarnings('ignore')
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
     handlers=[
         logging.FileHandler('ultimate_trading.log'),
         logging.StreamHandler()
