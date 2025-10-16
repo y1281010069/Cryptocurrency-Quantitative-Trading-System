@@ -56,6 +56,20 @@ TRADING_CONFIG = {
 # 配置日志记录器
 logger = logging.getLogger(__name__)
 
+# 配置日志格式，包含代码位置信息
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+logging.basicConfig(
+    level=logging.INFO,
+    format=log_format,
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+
+# 确保logger使用相同的格式
+for handler in logger.handlers:
+    handler.setFormatter(logging.Formatter(log_format))
+
 # 导入项目模块
 from strategies.base_strategy import BaseStrategy
 from lib import calculate_atr, send_trading_signal_to_api
