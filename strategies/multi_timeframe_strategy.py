@@ -44,7 +44,7 @@ TRADING_CONFIG = {
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
     "MAX_POSITIONS": 20,
     "MECHANISM_ID": 14,
-    "LOSS": 0.2,
+    "LOSS": 1,
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
     "TIMEFRAME_DATA_LENGTHS": {
         '4h': 168,   # 4小时
