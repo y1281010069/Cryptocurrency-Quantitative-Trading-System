@@ -1,0 +1,159 @@
+{% extends "layout.html" %}
+
+{% block title %}设置最大杠杆 - 加密货币量化交易系统{% endblock %}
+
+{% block page_title %}设置最大杠杆{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-md p-6 mb-6">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4 md:mb-0">设置最大杠杆</h3>
+        <div>
+            <button id="set-leverage-btn" class="bg-primary hover:bg-secondary text-white px-6 py-3 rounded-lg shadow transition duration-300 flex items-center">
+                <i class="fa fa-bolt mr-2"></i>
+                <span>执行设置最大杠杆</span>
+            </button>
+        </div>
+    </div>
+    
+    <div id="status-message" class="hidden p-4 rounded-lg mb-4"></div>
+    
+    <div class="overflow-hidden">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <h4 class="font-medium text-gray-700 mb-2">总交易对</h4>
+                <p id="total-instruments" class="text-2xl font-semibold text-primary">0</p>
+            </div>
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <h4 class="font-medium text-gray-700 mb-2">设置成功</h4>
+                <p id="success-count" class="text-2xl font-semibold text-green-600">0</p>
+            </div>
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <h4 class="font-medium text-gray-700 mb-2">设置失败</h4>
+                <p id="failed-count" class="text-2xl font-semibold text-red-600">0</p>
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <div class="relative">
+                <div id="progress-bar" class="absolute top-0 left-0 h-full bg-primary/20 rounded-lg transition-all duration-300" style="width: 0%"></div>
+                <div class="relative p-3 flex justify-between items-center">
+                    <span id="progress-text" class="font-medium text-gray-700">准备就绪</span>
+                    <span id="progress-percentage" class="text-sm text-gray-500">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="bg-white rounded-lg shadow-md p-6">
+    <h3 class="text-lg font-semibold text-gray-800 mb-4">执行日志</h3>
+    <div id="execution-log" class="bg-gray-50 p-4 rounded-lg h-80 overflow-y-auto font-mono text-sm text-gray-700"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const setLeverageBtn = document.getElementById('set-leverage-btn');
+        const statusMessage = document.getElementById('status-message');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const progressPercentage = document.getElementById('progress-percentage');
+        const executionLog = document.getElementById('execution-log');
+        const totalInstrumentsEl = document.getElementById('total-instruments');
+        const successCountEl = document.getElementById('success-count');
+        const failedCountEl = document.getElementById('failed-count');
+        
+        let isProcessing = false;
+        
+        // 添加日志函数
+        function addLog(message, isError = false) {
+            const logEntry = document.createElement('div');
+            logEntry.className = isError ? 'text-red-600' : 'text-gray-700';
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            executionLog.appendChild(logEntry);
+            executionLog.scrollTop = executionLog.scrollHeight;
+        }
+        
+        // 显示状态消息
+        function showStatus(message, isError = false) {
+            statusMessage.textContent = message;
+            statusMessage.className = `p-4 rounded-lg mb-4 ${isError ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`;
+            statusMessage.classList.remove('hidden');
+        }
+        
+        // 隐藏状态消息
+        function hideStatus() {
+            statusMessage.classList.add('hidden');
+        }
+        
+        // 更新进度
+        function updateProgress(percentage, text) {
+            progressBar.style.width = `${percentage}%`;
+            progressPercentage.textContent = `${percentage}%`;
+            progressText.textContent = text;
+        }
+        
+        // 执行设置最大杠杆
+        setLeverageBtn.addEventListener('click', async function() {
+            if (isProcessing) return;
+            
+            isProcessing = true;
+            setLeverageBtn.disabled = true;
+            setLeverageBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i><span>处理中...</span>';
+            
+            hideStatus();
+            executionLog.innerHTML = '';
+            updateProgress(0, '准备中...');
+            
+            try {
+                addLog('开始执行设置最大杠杆操作');
+                
+                // 调用API执行设置最大杠杆
+                const response = await fetch('/api/set_max_leverage', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API调用失败: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus('设置最大杠杆操作已成功完成');
+                    addLog('设置最大杠杆操作已完成');
+                    
+                    // 更新统计信息
+                    totalInstrumentsEl.textContent = data.total || 0;
+                    successCountEl.textContent = data.successCount || 0;
+                    failedCountEl.textContent = data.failedCount || 0;
+                    
+                    // 添加详细日志
+                    if (data.logs && Array.isArray(data.logs)) {
+                        data.logs.forEach(log => {
+                            addLog(log.message, log.error);
+                        });
+                    }
+                    
+                    updateProgress(100, '完成');
+                } else {
+                    throw new Error(data.message || '设置最大杠杆操作失败');
+                }
+            } catch (error) {
+                showStatus(`操作失败: ${error.message}`, true);
+                addLog(`错误: ${error.message}`, true);
+                updateProgress(0, '操作失败');
+            } finally {
+                isProcessing = false;
+                setLeverageBtn.disabled = false;
+                setLeverageBtn.innerHTML = '<i class="fa fa-bolt mr-2"></i><span>执行设置最大杠杆</span>';
+            }
+        });
+    });
+</script>
+{% endblock %}

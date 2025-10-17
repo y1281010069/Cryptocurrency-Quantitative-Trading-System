@@ -15,6 +15,7 @@ import contract_utils
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib', 'python-okx-master'))
 from okx.Trade import TradeAPI
 from okx.Account import AccountAPI
+from okx.PublicData import PublicAPI
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -62,56 +63,25 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'logged_in' not in session:
-            return redirect(url_for('login'))
+            return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
     return decorated_function
 
 # 配置默认的报告文件路径
 DEFAULT_REPORT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'reports', 'multi_timeframe_analysis_new.txt')
 
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    """登录页面路由"""
-    if request.method == 'POST':
-        # 支持JSON和表单数据两种方式
-        if request.is_json:
-            data = request.get_json()
-            username = data.get('username')
-            password = data.get('password')
-            remember_me = data.get('remember_me', False)
-        else:
-            username = request.form.get('username')
-            password = request.form.get('password')
-            remember_me = request.form.get('remember_me', False)
-        
-        # 验证用户名和密码
-        if username == 'admin' and password == 'adminadmin':
-            # 登录成功
-            session['logged_in'] = True
-            session['username'] = username
-            
-            # 如果选择了"记住我"，设置会话为永久会话（30天）
-            if remember_me or remember_me == 'on':
-                session.permanent = True
-            
-            return jsonify({'success': True, 'message': '登录成功'})
-        else:
-            return jsonify({'success': False, 'message': '用户名或密码错误'})
-    
-    # GET请求，显示登录页面
-    return render_template('login.html')
-
-
-@app.route('/logout')
-def logout():
-    """登出路由"""
-    session.clear()
-    return redirect(url_for('login'))
+# 导入路由蓝图
+from routes.auth_routes import auth_bp
+from routes.report_routes import report_bp
+from routes.okx_routes import okx_bp
+from routes.config_routes import config_bp
+from routes.leverage_routes import leverage_bp
 
 # 初始化OKX交易所连接
 okx_exchange = None
 okx_official_api = None  # OKX官方包的TradeAPI实例
+okx_account_api = None  # OKX官方包的AccountAPI实例
+okx_public_api = None  # OKX官方包的PublicAPI实例
 def init_okx_exchange():
     """初始化OKX交易所连接"""
     global okx_exchange, okx_official_api
@@ -172,6 +142,7 @@ def init_okx_exchange():
         # 创建OKX官方包的TradeAPI实例
         try:
             print("正在创建OKX官方包TradeAPI实例...")
+            global okx_official_api, okx_account_api, okx_public_api
             okx_official_api = TradeAPI(
                 api_key=config.okx_api_key,
                 api_secret_key=config.okx_api_secret,
@@ -182,9 +153,37 @@ def init_okx_exchange():
                 proxy=proxy_config
             )
             print("OKX官方包TradeAPI实例创建成功")
+            
+            # 创建OKX官方包AccountAPI实例
+            print("正在创建OKX官方包AccountAPI实例...")
+            okx_account_api = AccountAPI(
+                api_key=config.okx_api_key,
+                api_secret_key=config.okx_api_secret,
+                passphrase=config.okx_api_passphrase,
+                use_server_time=True,
+                flag='0',
+                debug=False,
+                proxy=proxy_config
+            )
+            print("OKX官方包AccountAPI实例创建成功")
+            
+            # 创建OKX官方包PublicAPI实例
+            print("正在创建OKX官方包PublicAPI实例...")
+            okx_public_api = PublicAPI(
+                api_key=config.okx_api_key,
+                api_secret_key=config.okx_api_secret,
+                passphrase=config.okx_api_passphrase,
+                use_server_time=True,
+                flag='0',
+                debug=False,
+                proxy=proxy_config
+            )
+            print("OKX官方包PublicAPI实例创建成功")
         except Exception as e:
-            print(f"创建OKX官方包TradeAPI实例失败: {e}")
+            print(f"创建OKX官方包API实例失败: {e}")
             okx_official_api = None
+            okx_account_api = None
+            okx_public_api = None
         
         # 验证ccxt连接是否成功
         try:
@@ -1903,89 +1902,17 @@ def convert_closed_orders_to_trades(closed_orders):
     return trades
 
 
-@app.route('/trading_config')
-@login_required
-def trading_config():
-    """交易配置修改页面路由"""
-    return render_template('trading_config.html', now=datetime.now())
+# 注册路由蓝图到Flask应用
+app.register_blueprint(auth_bp)
+app.register_blueprint(report_bp)
+app.register_blueprint(okx_bp)
+app.register_blueprint(config_bp)
+app.register_blueprint(leverage_bp)
 
-
-@app.route('/api/get_trading_config')
-def api_get_trading_config():
-    """API接口，获取当前交易配置"""
-    print("=== 收到/api/get_trading_config请求 ===")
-    try:
-        # 打印请求信息
-        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # 尝试导入配置
-        from config import TRADING_CONFIG
-        print("交易配置获取成功")
-        return jsonify({
-            'success': True,
-            'config': TRADING_CONFIG
-        })
-    except Exception as e:
-        print(f"获取交易配置时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'errorType': type(e).__name__
-        })
-
-
-@app.route('/api/save_trading_config', methods=['POST'])
-def api_save_trading_config():
-    """API接口，保存交易配置"""
-    print("=== 收到/api/save_trading_config请求 ===")
-    try:
-        # 打印请求信息
-        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # 获取请求数据
-        config_data = request.get_json()
-        print(f"接收到的配置数据: {config_data}")
-        
-        # 读取当前config.py文件内容
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.py')
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config_content = f.read()
-        
-        # 找到TRADING_CONFIG部分并替换
-        import re
-        # 定义新的TRADING_CONFIG内容
-        # 使用json.dumps转换，然后将JSON的小写布尔值替换为Python的大写布尔值
-        new_config_str = json.dumps(config_data, ensure_ascii=False, indent=4)
-        # 替换小写的true/false为大写的True/False
-        new_config_str = new_config_str.replace('true', 'True').replace('false', 'False')
-        new_config_content = f"TRADING_CONFIG = {new_config_str}"
-        
-        # 替换文件中的TRADING_CONFIG部分
-        updated_config_content = re.sub(r'TRADING_CONFIG = \{[\s\S]*?\}', new_config_content, config_content, flags=re.MULTILINE)
-        
-        # 写回文件
-        with open(config_path, 'w', encoding='utf-8') as f:
-            f.write(updated_config_content)
-        
-        print("交易配置保存成功")
-        return jsonify({
-            'success': True,
-            'message': '交易配置保存成功'
-        })
-    except Exception as e:
-        print(f"保存交易配置时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'errorType': type(e).__name__
-        })
-
+# 将全局API实例赋值给leverage_routes模块中的全局变量
+import routes.leverage_routes
+routes.leverage_routes.okx_public_api = okx_public_api
+routes.leverage_routes.okx_account_api = okx_account_api
 
 # 启动Flask应用（生产环境应使用专业Web服务器）
 app.run(host='0.0.0.0', debug=False)
