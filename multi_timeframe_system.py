@@ -3,7 +3,6 @@ import json
 import os
 import logging
 import redis
-import time  # 添加time模块导入
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional, Tuple

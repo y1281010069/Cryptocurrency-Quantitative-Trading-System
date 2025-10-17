@@ -47,6 +47,24 @@
                 transform: translateY(-2px);
                 box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             }
+            .long-position {
+                background-color: rgba(0, 180, 42, 0.05);
+            }
+            .long-position:hover {
+                background-color: rgba(0, 180, 42, 0.1);
+            }
+            .short-position {
+                background-color: rgba(245, 63, 63, 0.05);
+            }
+            .short-position:hover {
+                background-color: rgba(245, 63, 63, 0.1);
+            }
+            .text-green {
+                color: #00B42A;
+            }
+            .text-red {
+                color: #F53F3F;
+            }
         }
     </style>
 {% endblock %}
@@ -81,6 +99,78 @@
                 <div class="text-sm text-gray-500">未实现盈亏 (USDT)</div>
                 <div class="text-xl font-bold text-warning" id="unrealized-pnl">0.00</div>
             </div>
+        </div>
+        
+        <!-- 仓位统计信息 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">持仓数量</div>
+                <div class="text-xl font-bold text-primary" id="position-count">0</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">多头仓位</div>
+                <div class="text-xl font-bold text-success" id="long-count">0</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">空头仓位</div>
+                <div class="text-xl font-bold text-danger" id="short-count">0</div>
+            </div>
+            <div class="bg-background rounded-lg p-3 text-center">
+                <div class="text-sm text-gray-500">盈亏比例 (%)</div>
+                <div class="text-xl font-bold" id="pnl-ratio">0.00</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 仓位信息表格 -->
+    <section class="bg-card rounded-xl shadow-md p-4 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-gray-800 flex items-center">
+                <i class="fa fa-chart-line mr-2 text-primary"></i>当前仓位
+            </h2>
+            <div class="flex space-x-2">
+                <div class="relative">
+                    <input 
+                        type="text" 
+                        id="position-search" 
+                        placeholder="搜索币种..."
+                        class="px-3 py-1 rounded-md text-sm bg-background border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                    <i class="fa fa-search absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                </div>
+                <select id="position-filter" class="px-3 py-1 rounded-md text-sm bg-background border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/50">
+                    <option value="all">全部仓位</option>
+                    <option value="long">多头</option>
+                    <option value="short">空头</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="overflow-x-auto">
+            <table class="w-full min-w-full">
+                <thead>
+                    <tr class="bg-background text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th class="px-4 py-2">交易对</th>
+                        <th class="px-4 py-2">方向</th>
+                        <th class="px-4 py-2">合约张数</th>
+                        <th class="px-4 py-2">平均价格</th>
+                        <th class="px-4 py-2">标记价格</th>
+                        <th class="px-4 py-2">持仓价值(USDT)</th>
+                        <th class="px-4 py-2">未实现盈亏(USDT)</th>
+                        <th class="px-4 py-2">盈亏比例(%)</th>
+                        <th class="px-4 py-2">杠杆</th>
+                    </tr>
+                </thead>
+                <tbody id="positions-table-body" class="bg-white divide-y divide-gray-200">
+                    <!-- 加载状态 -->
+                    <tr>
+                        <td colspan="9" class="px-4 py-8 text-center">
+                            <i class="fa fa-spinner fa-spin text-2xl mb-2 block"></i>
+                            <div>正在加载仓位数据...</div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </section>
 
@@ -198,7 +288,8 @@
             })
             .then(data => {
                 if (data.success) {
-                    return data.data;
+                    // 将API返回的数据格式转换为前端需要的格式
+                    return transformApiDataToFrontendFormat(data.data);
                 } else {
                     throw new Error(data.error || '获取余额数据失败');
                 }
@@ -208,6 +299,83 @@
                 // 出错时返回模拟数据
                 return getMockBalanceData();
             });
+    }
+    
+    // API获取仓位数据
+    function fetchPositionsData() {
+        return fetch('/api/positions')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('网络响应错误');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    return data.data;
+                } else {
+                    throw new Error(data.error || '获取仓位数据失败');
+                }
+            })
+            .catch(error => {
+                console.error('获取仓位数据出错:', error);
+                // 出错时返回空数组
+                return [];
+            });
+    }
+    
+    // 转换API返回的数据格式为前端需要的格式
+    function transformApiDataToFrontendFormat(apiData) {
+        // 直接使用API返回的资产数组
+        const allAssets = apiData || [];
+        
+        // 转换资产格式
+        const transformedAssets = allAssets.map(asset => {
+            // 确定资产类型
+            let type = 'crypto';
+            const stableCoins = ['USDT', 'USDC', 'BUSD', 'DAI', 'USDP', 'TUSD'];
+            const fiatCurrencies = ['USD', 'CNY', 'EUR', 'JPY', 'GBP'];
+            
+            if (stableCoins.includes(asset.currency)) {
+                type = 'stable';
+            } else if (fiatCurrencies.includes(asset.currency)) {
+                type = 'fiat';
+            }
+            
+            // 对于USDT，其价值就是余额本身
+            let usdtValue = asset.currency === 'USDT' ? asset.balance : 0;
+            
+            return {
+                symbol: asset.currency,
+                name: asset.currency_name,
+                available: asset.available,
+                frozen: asset.used,
+                total: asset.balance,
+                usdtValue: usdtValue,
+                type: type
+            };
+        });
+        
+        // 计算总可用余额和冻结余额
+        let totalAvailable = 0;
+        let totalFrozen = 0;
+        let totalUsdtValue = 0;
+        
+        transformedAssets.forEach(asset => {
+            totalAvailable += asset.available;
+            totalFrozen += asset.frozen;
+            totalUsdtValue += asset.usdtValue;
+        });
+        
+        // 返回转换后的数据
+        return {
+            total: totalUsdtValue,
+            available: totalAvailable,
+            positions: 0, // OKX API中没有直接提供这个值
+            unrealizedPnl: 0, // OKX API中没有直接提供这个值
+            assets: transformedAssets,
+            recentTransactions: [] // OKX API中没有直接提供这个值
+        };
     }
     
     // 模拟余额数据
@@ -558,27 +726,33 @@
         }
     }
 
-    // 刷新余额数据
-    function refreshBalance() {
+    // 刷新数据（同时获取余额和仓位）
+    function refreshData() {
         // 显示加载状态
         showLoading(true);
         
-        // 从API获取余额数据
-        fetchBalanceData().then(data => {
-            // 更新界面
-            updateBalanceUI(data);
-            
-            // 隐藏加载状态
-            showLoading(false);
-        }).catch(error => {
-            console.error('刷新余额数据失败:', error);
-            
-            // 即使出错，也要隐藏加载状态
-            showLoading(false);
-            
-            // 可以在这里添加错误提示
-            alert('刷新余额数据失败，请稍后再试。');
-        });
+        // 同时获取余额和仓位数据
+        Promise.all([fetchBalanceData(), fetchPositionsData()])
+            .then(([balanceData, positionsData]) => {
+                // 更新界面
+                updateBalanceUI(balanceData);
+                updatePositionsUI(positionsData);
+                
+                // 更新最后更新时间
+                document.getElementById('last-update-time').textContent = `最后更新: ${new Date().toLocaleString()}`;
+                
+                // 隐藏加载状态
+                showLoading(false);
+            })
+            .catch(error => {
+                console.error('刷新数据失败:', error);
+                
+                // 即使出错，也要隐藏加载状态
+                showLoading(false);
+                
+                // 可以在这里添加错误提示
+                alert('刷新数据失败，请稍后再试。');
+            });
     }
 
     // 更新余额UI
@@ -609,7 +783,129 @@
         const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
         filterAssets(assetType, searchTerm);
     }
+    
+    // 更新仓位UI
+    function updatePositionsUI(positions) {
+        // 计算仓位统计信息
+        const totalPositions = positions.length;
+        const longPositions = positions.filter(p => p.posSide === 'long').length;
+        const shortPositions = positions.filter(p => p.posSide === 'short').length;
+        
+        // 计算总未实现盈亏
+        let totalUPL = 0;
+        let totalPositionValue = 0;
+        
+        // 处理每个仓位，使用API返回的notionalUsd作为持仓价值
+        const processedPositions = positions.map(pos => {
+            // 使用API返回的notionalUsd作为持仓价值，而不是自己计算
+            const positionValue = parseFloat(pos.notionalUsd) || Math.abs(parseFloat(pos.pos) * parseFloat(pos.markPx));
+            totalPositionValue += positionValue;
+            
+            // 未实现盈亏
+            const upl = parseFloat(pos.upl);
+            totalUPL += upl;
+            
+            // 盈亏比例 - 确保精确到小数点两位
+            let uplRatio;
+            if (pos.uplRatio) {
+                // 如果已有uplRatio，确保格式化为两位小数
+                if (typeof pos.uplRatio === 'number') {
+                    uplRatio = pos.uplRatio.toFixed(2) + '%';
+                } else if (typeof pos.uplRatio === 'string' && pos.uplRatio.includes('%')) {
+                    // 如果是带%的字符串，提取数字并格式化
+                    const ratioNum = parseFloat(pos.uplRatio);
+                    uplRatio = !isNaN(ratioNum) ? ratioNum.toFixed(2) + '%' : '0.00%';
+                } else {
+                    const ratioNum = parseFloat(pos.uplRatio);
+                    uplRatio = !isNaN(ratioNum) ? ratioNum.toFixed(2) + '%' : (upl / positionValue * 100).toFixed(2) + '%';
+                }
+            } else {
+                // 计算新的盈亏比例
+                uplRatio = (upl / positionValue * 100).toFixed(2) + '%';
+            }
+            
+            return {
+                ...pos,
+                positionValue: positionValue,
+                formattedPos: formatNumber(pos.pos, 2),
+                formattedAvgPx: formatNumber(pos.avgPx),
+                formattedMarkPx: formatNumber(pos.markPx),
+                formattedUpl: formatNumber(upl),
+                formattedUplRatio: uplRatio,
+                directionClass: pos.posSide === 'long' ? 'long-position' : 'short-position'
+            };
+        });
+        
+        // 计算盈亏比例（注意：页面显示时不需要百分号，因为标题中已有%符号）
+        const totalUplRatio = totalPositionValue > 0 ? (totalUPL / totalPositionValue * 100).toFixed(2) : '0.00';
+        
+        // 更新仓位统计卡片（添加空引用检查，使用正确的元素ID）
+        // 更新持仓数量
+        const positionCountElem = document.getElementById('position-count');
+        if (positionCountElem) positionCountElem.textContent = totalPositions;
+        
+        // 更新多头仓位
+        const longCountElem = document.getElementById('long-count');
+        if (longCountElem) longCountElem.textContent = longPositions;
+        
+        // 更新空头仓位
+        const shortCountElem = document.getElementById('short-count');
+        if (shortCountElem) shortCountElem.textContent = shortPositions;
+        
+        // 更新盈亏比例
+        const pnlRatioElem = document.getElementById('pnl-ratio');
+        if (pnlRatioElem) pnlRatioElem.textContent = totalUplRatio;
+        
+        // 更新持仓价值和未实现盈亏
+        const positionAssetsElem = document.getElementById('position-assets');
+        if (positionAssetsElem) positionAssetsElem.textContent = formatNumber(totalPositionValue);
+        
+        const unrealizedPnlElem = document.getElementById('unrealized-pnl');
+        if (unrealizedPnlElem) unrealizedPnlElem.textContent = formatNumber(totalUPL);
+        
+        // 更新仓位列表
+        renderPositionsTable(processedPositions);
+    }
 
+    // 渲染仓位表格
+    function renderPositionsTable(positions) {
+        const tableBody = document.getElementById('positions-table-body');
+        
+        if (positions.length === 0) {
+            // 没有仓位数据时显示空状态
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center">暂无仓位数据</td>
+                </tr>
+            `;
+            return;
+        }
+        
+        // 清空表格
+        tableBody.innerHTML = '';
+        
+        // 为每个仓位创建一行
+        positions.forEach(pos => {
+            const row = document.createElement('tr');
+            row.className = pos.directionClass;
+            
+            // 设置行数据
+            row.innerHTML = `
+                <td>${pos.instId || '-'}</td>
+                <td>${pos.posSide === 'long' ? '多头' : '空头'}</td>
+                <td>${pos.formattedPos}</td>
+                <td>${pos.formattedAvgPx}</td>
+                <td>${pos.formattedMarkPx}</td>
+                <td>${formatNumber(pos.positionValue)} USDT</td>
+                <td class="${parseFloat(pos.upl) >= 0 ? 'text-green' : 'text-red'}">${pos.formattedUpl} USDT</td>
+                <td class="${parseFloat(pos.upl) >= 0 ? 'text-green' : 'text-red'}">${pos.formattedUplRatio}</td>
+                <td>${pos.lever || '-'}</td>
+            `;
+            
+            tableBody.appendChild(row);
+        });
+    }
+    
     // 页面加载完成后执行
     document.addEventListener('DOMContentLoaded', function() {
         // 初始化资产类型筛选
@@ -621,11 +917,11 @@
         // 初始化刷新按钮
         const refreshBtn = document.getElementById('refresh-balance-btn');
         if (refreshBtn) {
-            refreshBtn.addEventListener('click', refreshBalance);
+            refreshBtn.addEventListener('click', refreshData);
         }
         
         // 初始加载余额数据
-        refreshBalance();
+        refreshData();
     });
 </script>
 {% endblock %}

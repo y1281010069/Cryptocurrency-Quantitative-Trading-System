@@ -1,0 +1,17 @@
+{
+  "trading": {
+    "max_leverage": 5,
+    "position_sizing_pct": 1.0,
+    "stop_loss_pct": 2.0,
+    "take_profit_pct": 5.0
+  },
+  "risk_management": {
+    "max_daily_loss_pct": 3.0,
+    "max_drawdown_pct": 10.0,
+    "trade_limit_per_day": 10
+  },
+  "notification": {
+    "enable_email": false,
+    "enable_telegram": false
+  }
+}

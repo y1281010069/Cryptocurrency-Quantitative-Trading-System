@@ -77,6 +77,14 @@ from routes.okx_routes import okx_bp
 from routes.config_routes import config_bp
 from routes.leverage_routes import leverage_bp
 
+
+# 导入控制器
+from control.report_control import ReportControl
+from control.okx_control import OKXControl
+from control.config_control import ConfigControl
+from control.leverage_control import LeverageControl
+from control.auth_control import AuthControl
+
 # 初始化OKX交易所连接
 okx_exchange = None
 okx_official_api = None  # OKX官方包的TradeAPI实例
@@ -213,693 +221,75 @@ def init_okx_exchange():
 init_okx_exchange()
 
 
-def parse_report_content(file_path=DEFAULT_REPORT_PATH):
-    """解析报告文件内容并返回结构化数据"""
-    try:
-        # 检查文件是否存在
-        if not os.path.exists(file_path):
-            print(f"警告: 报告文件不存在 - {file_path}")
-            # 返回包含错误信息的数据结构，不使用模拟数据
-            error_data = {
-                'analysisTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'timeframeDimensions': '周线→日线→4小时→1小时→15分钟',
-                'totalOpportunities': 0,
-                'error': f"报告文件不存在: {file_path}",
-                'opportunities': []
-            }
-            return error_data
-        
-        # 记录文件修改时间，用于调试
-        file_mtime = os.path.getmtime(file_path)
-        print(f"读取文件: {file_path}, 最后修改时间: {datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # 尝试使用不同的编码读取文件内容
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-        except UnicodeDecodeError:
-            try:
-                with open(file_path, 'r', encoding='gbk') as f:
-                    content = f.read()
-            except:
-                with open(file_path, 'r', encoding='latin-1') as f:
-                    content = f.read()
-        
-        report_data = {
-            'analysisTime': '',
-            'timeframeDimensions': '',
-            'totalOpportunities': 0,
-            'opportunities': []
-        }
+# 初始化全局控制器实例
+global_report_control = ReportControl()
+global_okx_control = OKXControl()
+global_config_control = ConfigControl()
+global_leverage_control = LeverageControl()
+global_auth_control = AuthControl()
 
-        # 尝试使用更宽松的正则表达式解析报告头部
-        # 我们不依赖于特定的符号和文本，而是寻找包含时间、维度和机会数量的部分
-        time_match = re.search(r'鍒嗘瀽鏃堕棿:?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{1,2}:\d{1,2})', content)
-        if time_match:
-            report_data['analysisTime'] = time_match.group(1).strip()
-        else:
-            report_data['analysisTime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            
-        # 设置默认的时间框架维度
-        report_data['timeframeDimensions'] = '周线→日线→4小时→1小时→15分钟'
-        
-        # 尝试从文件中提取机会数量
-        opportunities_match = re.search(r'鍙戠幇鏈轰細:?\s*(\d+)', content)
-        if opportunities_match:
-            try:
-                report_data['totalOpportunities'] = int(opportunities_match.group(1).strip())
-            except:
-                report_data['totalOpportunities'] = 0
-
-        # 使用更宽松的正则表达式解析每个交易机会
-        # 查找以"銆愭満浼?"或"【机会"开始的行
-        opportunity_markers = re.finditer(r'(銆愭満浼?|【机会)\s*(\d+)\s*(銆?|】)', content)
-        
-        for marker_idx, marker in enumerate(opportunity_markers):
-            # 获取匹配的所有组
-            groups = marker.groups()
-            # 提取需要的信息
-            opportunity_type = groups[0]  # 銆愭満浼? 或 【机会
-            try:
-                rank = int(groups[1])  # 排名数字
-            except:
-                rank = marker_idx + 1
-            closing_char = groups[2]  # 銆? 或 】
-            
-            # 获取当前匹配的结束位置
-            end_pos = marker.end()
-            
-            # 查找下一个机会的开始位置
-            next_opportunity_match = re.search(r'(銆愭満浼?|【机会)', content[end_pos:])
-            
-            # 确定当前机会的文本块范围
-            if next_opportunity_match:
-                block_end = end_pos + next_opportunity_match.start()
-            else:
-                block_end = len(content)
-            
-            # 提取当前机会的文本块
-            block_text = content[end_pos:block_end]
-            
-            # 从文本块中提取交易对
-            symbol_match = re.search(r'([A-Z0-9]+/[A-Z0-9]+)', block_text)
-            if symbol_match:
-                symbol = symbol_match.group(1)
-            else:
-                symbol = f'未知交易对_{rank}'
-            
-            # 提取建议动作
-            action_match = re.search(r'(缁煎悎寤鸿:?|综合建议:?)\s*([^\n]+)', block_text)
-            action = action_match.group(2).strip() if action_match else '未知'
-            
-            # 提取信心等级
-            confidence_match = re.search(r'(淇″績绛夌骇:?|信心等级:?)\s*([^\n]+)', block_text)
-            confidence = confidence_match.group(2).strip() if confidence_match else '未知'
-            
-            # 提取总评分，支持负数评分
-            score_match = re.search(r'(鎬昏瘎鍒?|总评分:?)\s*(-?[\d.]+)', block_text)
-            if score_match:
-                try:
-                    totalScore = float(score_match.group(2).strip())
-                except:
-                    totalScore = 0.0
-            else:
-                totalScore = 0.0
-            
-            # 提取当前价格，支持负数价格
-            price_match = re.search(r'(褰撳墠浠锋牸:?|当前价格:?)\s*(-?[\d.]+)', block_text)
-            if price_match:
-                try:
-                    currentPriceValue = float(price_match.group(2).strip())
-                except:
-                    currentPriceValue = 0.0
-            else:
-                currentPriceValue = 0.0
-            
-            # 提取多时间框架分析
-            weeklyTrend = dailyTrend = h4Signal = h1Signal = m15Signal = '未知'
-            timeframes_match = re.finditer(r'(鍛ㄧ嚎瓒嬪娍:?|周线趋势:?)\s*([^\n]+)', block_text)
-            for tm in timeframes_match:
-                weeklyTrend = tm.group(2).strip()
-            
-            timeframes_match = re.finditer(r'(鏃ョ嚎瓒嬪娍:?|日线趋势:?)\s*([^\n]+)', block_text)
-            for tm in timeframes_match:
-                dailyTrend = tm.group(2).strip()
-            
-            timeframes_match = re.finditer(r'(4灏忔椂淇″彿:?|4小时信号:?)\s*([^\n]+)', block_text)
-            for tm in timeframes_match:
-                h4Signal = tm.group(2).strip()
-            
-            timeframes_match = re.finditer(r'(1灏忔椂淇″彿:?|1小时信号:?)\s*([^\n]+)', block_text)
-            for tm in timeframes_match:
-                h1Signal = tm.group(2).strip()
-            
-            timeframes_match = re.finditer(r'(15鍒嗛挓淇″彿:?|15分钟信号:?)\s*([^\n]+)', block_text)
-            for tm in timeframes_match:
-                m15Signal = tm.group(2).strip()
-            
-            # 提取目标价格
-            targetShort = stopLoss = 0.0
-            
-            # 提取短期目标 (现在是1.5倍ATR)
-            target_match = re.search(r'(鐭湡鐩爣|短期目标).*?:?\s*(-?[\d.]+)', block_text)
-            if target_match:
-                try:
-                    targetShort = float(target_match.group(2).strip())
-                except:
-                    pass
-            
-            # 提取止损价格 (现在是1倍ATR的反向价格)
-            target_match = re.search(r'(姝㈡崯浠锋牸|止损价格).*?:?\s*(-?[\d.]+)', block_text)
-            if target_match:
-                try:
-                    stopLoss = float(target_match.group(2).strip())
-                except:
-                    pass
-            
-            # 计算百分比变化
-            try:
-                shortPct = ((targetShort / currentPriceValue - 1) * 100) if currentPriceValue > 0 else 0.0
-                stopPct = ((stopLoss / currentPriceValue - 1) * 100) if currentPriceValue > 0 else 0.0
-                mediumPct = longPct = 0.0  # 不再使用中期和长期目标
-            except (ValueError, ZeroDivisionError):
-                shortPct = stopPct = mediumPct = longPct = 0.0
-            
-            # 提取分析依据
-            reasoning_match = re.search(r'(鍒嗘瀽渚濇嵁:?|分析依据:?)\s*([^\n]+)', block_text)
-            reasoning = reasoning_match.group(2).strip() if reasoning_match else '无'
-            
-            # 添加到机会列表
-            report_data['opportunities'].append({
-                'rank': rank,
-                'symbol': symbol,
-                'action': action,
-                'confidence': confidence,
-                'totalScore': totalScore,
-                'currentPrice': currentPriceValue,
-                'weeklyTrend': weeklyTrend,
-                'dailyTrend': dailyTrend,
-                'h4Signal': h4Signal,
-                'h1Signal': h1Signal,
-                'm15Signal': m15Signal,
-                'targetShort': targetShort,
-                'stopLoss': stopLoss,
-                'reasoning': reasoning,
-                'shortPct': round(shortPct, 1),
-                'mediumPct': round(mediumPct, 1),
-                'longPct': round(longPct, 1),
-                'stopPct': round(stopPct, 1)
-            })
-        
-        # 更新实际找到的机会数量
-        report_data['totalOpportunities'] = len(report_data['opportunities'])
-        
-        # 如果没有找到交易机会，返回空列表
-        if not report_data['opportunities']:
-            report_data['totalOpportunities'] = 0
-            
-        return report_data
-        
-    except Exception as e:
-        # 详细记录解析错误
-        print(f"解析报告文件失败: {e}")
-        
-        # 尝试使用更宽松的解析方式或者直接返回错误信息
-        try:
-            # 读取文件内容作为错误信息的一部分
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content_preview = f.read(500)  # 只读取前500个字符
-            print(f"文件内容预览: {content_preview}")
-        except Exception as read_error:
-            print(f"读取文件内容失败: {read_error}")
-            
-        # 返回包含错误信息的特殊数据结构
-        error_data = {
-            'analysisTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'timeframeDimensions': '周线→日线→4小时→1小时→15分钟',
-            'totalOpportunities': 0,
-            'error': str(e),
-            'opportunities': []
-        }
-        
-        # 如果出现解析错误，优先返回错误信息而不是模拟数据
-        return error_data
+# 将API实例注入到控制器中
+global_okx_control.set_api_clients(okx_public_api=okx_public_api, okx_account_api=okx_account_api, okx_official_api=okx_official_api, okx_exchange=okx_exchange)
+global_leverage_control.set_api_clients(okx_public_api=okx_public_api, okx_account_api=okx_account_api, okx_official_api=okx_official_api)
+print("=== 控制器API实例注入完成 ===")
 
 
 
-def process_balance_asset(currency, balance_info, okx_exchange):
-    """处理单个资产的余额信息"""
-    # 获取资产价格（如果无法获取则默认为0）
-    try:
-        # 获取USDT价格
-        if currency == 'USDT':
-            price = 1.0
-        else:
-            # 尝试获取交易对的最新价格
-            try:
-                ticker = okx_exchange.fetch_ticker(f'{currency}/USDT')
-                price = ticker['last'] if ticker else 0.0
-            except Exception as ticker_error:
-                print(f"获取{currency}/USDT价格失败: {ticker_error}")
-                price = 0.0
-    except:
-        price = 0.0
-    
-    # 计算USDT价值
-    usdt_value = balance_info['total'] * price
-    
-    # 确定资产类型
-    asset_type = 'crypto'
-    if currency in ['USD', 'EUR', 'JPY', 'CNY']:
-        asset_type = 'fiat'
-    elif currency in ['USDT', 'BUSD', 'USDC', 'DAI']:
-        asset_type = 'stable'
-    
-    # 获取资产名称
-    asset_name = get_asset_name(currency)
-    
-    # 返回处理后的资产信息
-    return {
-        'symbol': currency,
-        'name': asset_name,
-        'available': balance_info['free'],
-        'frozen': balance_info['used'],
-        'total': balance_info['total'],
-        'usdtValue': usdt_value,
-        'type': asset_type
-    }
+# OKX相关功能已合并到OKXControl类中
 
 
 def get_okx_balance():
     """获取OKX交易所的账户余额数据"""
-    print("=== 开始获取OKX余额数据 ===")
-    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
-    if not okx_exchange:
-        print("OKX连接状态: 未连接 - 将返回空数据")
-        # 尝试打印连接信息，帮助调试
-        print("当前API配置信息:")
-        print(f"- API Key存在: {bool(config.okx_api_key)}")
-        print(f"- API Secret存在: {bool(config.okx_api_secret)}")
-        print(f"- API Passphrase存在: {bool(config.okx_api_passphrase)}")
-        return {
-            'total': 0,
-            'available': 0,
-            'positions': 0,
-            'unrealizedPnl': 0,
-            'assets': [],
-            'recentTransactions': []
-        }
-    else:
-        print("OKX连接状态: 已连接 - 尝试获取真实余额数据")
-        try:
-            # 调用OKX API获取余额数据
-            balances = okx_exchange.fetch_balance()
-            print(f"获取余额数据成功，包含{len(balances.get('total', {}))}个资产")
-            
-            # 初始化资产列表和统计数据
-            assets = []
-            total_usdt_value = 0
-            total_available = 0
-            total_frozen = 0
-            
-            # 处理每个资产的余额信息
-            for currency, balance_info in balances.get('total', {}).items():
-                # 跳过余额为0的资产
-                if balance_info == 0:
-                    continue
-                
-                # 构建完整的balance_info字典
-                full_balance_info = {
-                    'free': balances.get('free', {}).get(currency, 0),
-                    'used': balances.get('used', {}).get(currency, 0),
-                    'total': balance_info
-                }
-                
-                # 处理单个资产信息
-                asset_data = process_balance_asset(currency, full_balance_info, okx_exchange)
-                assets.append(asset_data)
-                
-                # 更新统计数据
-                total_usdt_value += asset_data['usdtValue']
-                total_available += asset_data['available']
-                total_frozen += asset_data['frozen']
-            
-            # 返回格式化后的余额数据
-            return {
-                'total': total_usdt_value,
-                'available': total_available,
-                'positions': 0,  # 实际项目中可能需要从其他地方获取
-                'unrealizedPnl': 0,  # 实际项目中可能需要从其他地方获取
-                'assets': assets,
-                'recentTransactions': []  # 实际项目中可能需要从其他地方获取
-            }
-        except Exception as e:
-            print(f"获取真实余额数据时发生错误: {e}")
-            # 打印更详细的错误信息
-            import traceback
-            print(f"错误堆栈:\n{traceback.format_exc()}")
-            # 出错时返回模拟数据
-            return get_mock_balance_data()
+    return global_okx_control.get_okx_balance()
+
+
+def get_detailed_okx_balance():
+    """获取详细的OKX账户余额数据"""
+    return global_okx_control.get_detailed_okx_balance()
+
+
+def get_okx_positions():
+    """获取OKX交易所的当前仓位数据"""
+    return global_okx_control.get_okx_positions()
 
 
 def get_okx_open_orders():
-    """获取OKX交易所的当前挂单数据，使用/api/v5/trade/orders-pending接口"""
-    print("=== 开始获取OKX当前挂单数据 ===")
-    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
-    if not okx_official_api:
-        print("OKX官方API实例未初始化 - 将返回空数据")
-        return []
-    
-    try:
-        print("正在调用OKX API /api/v5/trade/orders-pending获取当前挂单...")
-        # 使用OKX官方API调用orders-pending接口，指定instType为SWAP
-        response = okx_official_api.get_order_list(
-            instType='SWAP'  # 指定合约类型为永续合约
-        )
-        
-        # 检查响应是否成功
-        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0' and 'data' in response:
-            open_orders = response['data']
-            print(f"成功获取到{len(open_orders)}个挂单")
-            
-            # 格式化挂单数据
-            formatted_orders = []
-            for order in open_orders:
-                formatted_order = {
-                    'id': order.get('ordId', ''),
-                    'symbol': order.get('instId', ''),
-                    'type': order.get('ordType', ''),
-                    'side': order.get('side', ''),
-                    'price': float(order.get('px', 0)) if order.get('px') else 0,
-                    'amount': float(order.get('sz', 0)) if order.get('sz') else 0,
-                    'remaining': float(order.get('sz', 0)) - float(order.get('accFillSz', 0)) if order.get('sz') and order.get('accFillSz') else 0,
-                    'filled': float(order.get('accFillSz', 0)) if order.get('accFillSz') else 0,
-                    'status': order.get('state', ''),
-                    'datetime': datetime.fromtimestamp(int(order.get('cTime', '0')) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('cTime') else ''
-                }
-                formatted_orders.append(formatted_order)
-            
-            return formatted_orders
-        else:
-            print(f"获取挂单数据失败，响应: {response}")
-            return []
-    except Exception as e:
-        print(f"获取挂单数据时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return []
+    """获取OKX交易所的当前挂单数据"""
+    return global_okx_control.get_okx_open_orders()
 
 
 def cancel_okx_order(order_id, symbol):
-    """取消OKX交易所的订单，使用/api/v5/trade/cancel-order接口"""
-    print(f"=== 开始取消OKX订单: {order_id}, {symbol} ===")
-    # 如果没有成功连接到OKX或API密钥未配置，返回失败
-    if not okx_official_api:
-        print("OKX官方API实例未初始化 - 无法取消订单")
-        return False
-    
-    try:
-        print("正在调用OKX官方API /api/v5/trade/cancel-order取消订单...")
-        # 使用OKX官方API调用cancel-order接口取消订单
-        response = okx_official_api.cancel_order(
-            ordId=order_id,
-            instId=symbol
-        )
-        
-        # 检查响应是否成功
-        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0':
-            print(f"订单取消成功: {order_id}")
-            return True
-        else:
-            error_msg = response.get('msg', '未知错误') if response else '无响应'
-            print(f"订单取消失败: {error_msg}")
-            return False
-    except Exception as e:
-        print(f"取消订单时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return False
+    """取消OKX交易所的订单"""
+    return global_okx_control.cancel_okx_order(order_id, symbol)
 
 
 def modify_okx_order(order_id, symbol, new_price, new_amount):
-    """修改OKX交易所的订单，使用/api/v5/trade/amend-order接口"""
-    print(f"=== 开始修改OKX订单: {order_id}, {symbol} ===")
-    # 如果没有成功连接到OKX或API密钥未配置，返回失败
-    if not okx_official_api:
-        print("OKX官方API实例未初始化 - 无法修改订单")
-        return False
-    
-    try:
-        # 使用OKX官方API调用amend-order接口修改订单
-        print(f"正在调用amend-order接口修改订单: {order_id}，新价格: {new_price}, 新数量: {new_amount}")
-        response = okx_official_api.amend_order(
-            ordId=order_id,
-            instId=symbol,
-            newPx=str(new_price) if new_price else None,
-            newSz=str(new_amount) if new_amount else None
-        )
-        
-        # 检查响应是否成功
-        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0':
-            print(f"订单修改成功: {order_id}")
-            return True
-        else:
-            error_msg = response.get('msg', '未知错误') if response else '无响应'
-            print(f"订单修改失败: {error_msg}")
-            return False
-    except Exception as e:
-        print(f"修改订单时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return False
-    
-    try:
-        # 打印请求前的准备信息
-        print("正在准备调用OKX API获取余额数据...")
-        # 获取账户余额
-        balances = okx_exchange.fetch_balance()
-        # 打印原始返回数据（不包含敏感信息）
-        print(f"OKX API原始返回数据: {type(balances).__name__}")
-        print(f"返回数据包含键: {list(balances.keys())}")
-        
-        # 准备返回数据
-        result = {
-            'total': 0.0,
-            'available': 0.0,
-            'positions': 0.0,
-            'unrealizedPnl': 0.0,
-            'assets': [],
-            'recentTransactions': []
-        }
-        
-        # 处理资产数据
-        total_assets = 0.0
-        
-        # 打印balances对象结构信息用于调试
-        print(f"OKX返回的余额数据类型: {type(balances).__name__}")
-        print(f"余额数据包含的键: {list(balances.keys())}")
-        
-        # 检查是否存在'info'或其他可能包含真实数据的键
-        if 'info' in balances and isinstance(balances['info'], dict):
-            print(f"余额数据info字段包含的键: {list(balances['info'].keys())}")
-            # 打印info.data字段内容（如果存在）
-            if 'data' in balances['info']:
-                print(f"info.data类型: {type(balances['info']['data']).__name__}")
-                # 只打印前100个字符以避免过长输出
-                print(f"info.data内容预览: {str(balances['info']['data'])[:100]}...")
-        
-        # 处理资产数据
-        if isinstance(balances, dict):
-            # 检查是否有更合适的数据结构
-            if 'total' in balances and isinstance(balances['total'], dict):
-                # 如果balances['total']是一个字典，可能是另一种数据格式
-                print("检测到alternative balance format")
-                # 打印total字典中的资产数量
-                print(f"balances['total']中包含的资产数量: {len(balances['total'])}")
-                # 打印前5个资产的键值对作为预览
-                print(f"balances['total']前5个资产预览: {list(balances['total'].items())[:5]}")
-                
-                # 检查free和used字典
-                if 'free' in balances and isinstance(balances['free'], dict):
-                    print(f"balances['free']中包含的资产数量: {len(balances['free'])}")
-                if 'used' in balances and isinstance(balances['used'], dict):
-                    print(f"balances['used']中包含的资产数量: {len(balances['used'])}")
-                
-                asset_count = 0
-                skipped_count = 0
-                
-                for currency, amount in balances['total'].items():
-                    # 构建balance_info字典
-                    balance_info = {
-                        'total': amount,
-                        'free': balances.get('free', {}).get(currency, 0),
-                        'used': balances.get('used', {}).get(currency, 0)
-                    }
-                    
-                    # 记录处理情况
-                    if balance_info['total'] <= 0: 
-                        skipped_count += 1
-                        # 每10个跳过的资产打印一次信息
-                        if skipped_count % 10 == 0:
-                            print(f"已跳过{skipped_count}个无余额资产...")
-                        continue
-                    
-                    asset_count += 1
-                    # 打印处理的资产信息（前5个）
-                    if asset_count <= 5:
-                        print(f"处理资产#{asset_count}: {currency} - 余额: {balance_info['total']}")
-                    
-                    # 处理这个资产
-                    asset_data = process_balance_asset(currency, balance_info, okx_exchange)
-                    result['assets'].append(asset_data)
-                    total_assets += asset_data['usdtValue']
-                
-                print(f"处理资产完成: 共{asset_count}个有余额资产, 跳过{skipped_count}个无余额资产")
-            else:
-                # 尝试原始的数据处理方式
-                for currency, balance_info in balances.items():
-                    # 跳过特定的非资产键
-                    if currency in ['info', 'timestamp', 'datetime', 'free', 'used', 'total']:
-                        continue
-                    
-                    # 确保balance_info是字典类型
-                    if not isinstance(balance_info, dict):
-                        print(f"警告: {currency}的余额信息不是字典类型，而是: {type(balance_info).__name__}")
-                        continue
-                    
-                    # 检查必要的键是否存在
-                    if 'total' not in balance_info:
-                        print(f"警告: {currency}的余额信息中缺少'total'键，可用键: {list(balance_info.keys())}")
-                        # 尝试从其他可能的键获取余额信息
-                        if 'amount' in balance_info:
-                            balance_info['total'] = balance_info['amount']
-                        elif 'balance' in balance_info:
-                            balance_info['total'] = balance_info['balance']
-                        else:
-                            continue  # 跳过无法获取余额的资产
-                    
-                    # 确保free和used键存在
-                    if 'free' not in balance_info:
-                        balance_info['free'] = balance_info['total']
-                    if 'used' not in balance_info:
-                        balance_info['used'] = 0
-                    
-                    # 跳过没有余额的资产
-                    if balance_info['total'] <= 0: 
-                        continue
-                    
-                    # 处理这个资产
-                    asset_data = process_balance_asset(currency, balance_info, okx_exchange)
-                    result['assets'].append(asset_data)
-                    total_assets += asset_data['usdtValue']
-            
-        
-        # 更新总资产信息
-        result['total'] = total_assets
-        # 改进available计算，考虑所有资产的可用余额的USDT价值
-        result['available'] = sum(asset['available'] * (1 if asset['symbol'] == 'USDT' else (asset['usdtValue'] / asset['total'] if asset['total'] > 0 else 0)) for asset in result['assets'])
-        
-        # 按USDT价值排序资产
-        result['assets'].sort(key=lambda x: x['usdtValue'], reverse=True)
-        
-        # 尝试获取最近交易（需要额外的API调用权限）
-        try:
-            # 获取最近的5条交易记录
-            recent_orders = okx_exchange.fetch_closed_orders(limit=5)
-            for order in recent_orders:
-                if order['status'] == 'closed' and order['amount'] > 0:
-                    # 确定交易类型
-                    if order['side'] == 'buy':
-                        type_text = 'buy'
-                    elif order['side'] == 'sell':
-                        type_text = 'sell'
-                    else:
-                        type_text = 'unknown'
-                    
-                    # 添加到最近交易列表
-                    result['recentTransactions'].append({
-                        'symbol': order['symbol'].split('/')[0],
-                        'type': type_text,
-                        'amount': order['amount'],
-                        'price': order['price'],
-                        'time': datetime.fromtimestamp(order['timestamp'] / 1000).strftime('%Y-%m-%d %H:%M:%S')
-                    })
-        except Exception as e:
-            print(f"获取最近交易记录失败: {e}")
-            # 继续执行，不影响主要功能
-        
-        return result
-    except Exception as e:
-        print(f"获取OKX余额数据失败: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        # 检查是否是网络错误
-        if 'NetworkError' in str(type(e).__name__):
-            print("提示: 这可能是网络连接问题或代理设置问题。")
-            print("建议检查网络连接、防火墙设置和代理配置。")
-        # 检查是否是认证错误
-        elif 'AuthenticationError' in str(type(e).__name__):
-            print("提示: 这可能是API密钥、密钥或密码错误。")
-            print("建议检查API密钥配置是否正确。")
-        # 出错时返回空数据
-        return {
-            'total': 0,
-            'available': 0,
-            'positions': 0,
-            'unrealizedPnl': 0,
-            'assets': [],
-            'recentTransactions': []
-        }
+    """修改OKX交易所的订单"""
+    return global_okx_control.modify_okx_order(order_id, symbol, new_price, new_amount)
 
-def get_asset_name(symbol):
-    """获取加密货币的完整名称"""
-    asset_names = {
-        'BTC': 'Bitcoin',
-        'ETH': 'Ethereum',
-        'USDT': 'Tether',
-        'BUSD': 'Binance USD',
-        'SOL': 'Solana',
-        'XRP': 'Ripple',
-        'DOGE': 'Dogecoin',
-        'ADA': 'Cardano',
-        'DOT': 'Polkadot',
-        'LTC': 'Litecoin',
-        'LINK': 'Chainlink',
-        'UNI': 'Uniswap',
-        'USDC': 'USD Coin',
-        'DAI': 'Dai',
-        'AVAX': 'Avalanche',
-        'SOL': 'Solana',
-        'DOT': 'Polkadot',
-        'MATIC': 'Polygon',
-        'SHIB': 'Shiba Inu',
-        'TRX': 'Tron',
-        'ATOM': 'Cosmos',
-        'ALGO': 'Algorand',
-        'XTZ': 'Tezos',
-        'EOS': 'EOS',
-        'XMR': 'Monero',
-        'DASH': 'Dash',
-        'ZEC': 'Zcash',
-        'BCH': 'Bitcoin Cash',
-        'ETC': 'Ethereum Classic',
-        'BSV': 'Bitcoin SV',
-        'FIL': 'Filecoin',
-        'AAVE': 'Aave',
-        'COMP': 'Compound',
-        'MKR': 'Maker',
-        'SNX': 'Synthetix',
-        'YFI': 'Yearn Finance',
-        'USD': 'US Dollar',
-        'EUR': 'Euro',
-        'JPY': 'Japanese Yen',
-        'CNY': 'Chinese Yuan'
-    }
-    return asset_names.get(symbol, symbol)
+
+def get_okx_stop_orders():
+    """获取OKX交易所的止盈止损订单数据"""
+    # 调用OKXControl实例的方法并返回格式化的订单数据
+    result = global_okx_control.get_okx_stop_orders()
+    # 从结果中提取stop_orders列表（兼容原有代码的返回格式）
+    return result.get('stop_orders', [])
+
+
+def cancel_okx_stop_order(order_id, symbol):
+    """取消OKX交易所的止盈止损订单"""
+    # 调用OKXControl实例的方法并返回成功状态（兼容原有代码的返回格式）
+    result = global_okx_control.cancel_okx_stop_order(order_id, symbol)
+    # 从结果中提取success状态（兼容原有代码的返回格式）
+    return result.get('success', False)
+
+
+def modify_okx_stop_order(order_id, symbol, new_tp_ord_price=None, new_tp_trigger_price=None, new_amount=None, new_sl_trigger_price=None):
+    """修改OKX交易所的止盈止损订单"""
+    # 调用OKXControl实例的方法并返回成功状态（兼容原有代码的返回格式）
+    result = global_okx_control.modify_okx_stop_order(order_id, symbol, new_tp_ord_price, new_tp_trigger_price, new_amount, new_sl_trigger_price)
+    # 从结果中提取success状态（兼容原有代码的返回格式）
+    return result.get('success', False)
 
 
 @app.route('/')
@@ -909,7 +299,7 @@ def index():
     # 从URL参数获取报告文件路径
     report_path = request.args.get('file', DEFAULT_REPORT_PATH)
     # 解析报告数据
-    report_data = parse_report_content(report_path)
+    report_data = global_report_control.parse_report_content(report_path)
     
     # 统计各类机会数量
     buy_count = len([op for op in report_data['opportunities'] if '买入' in op['action']])
@@ -930,7 +320,7 @@ def index():
 def api_data():
     """API接口，返回JSON格式的报告数据"""
     report_path = request.args.get('file', DEFAULT_REPORT_PATH)
-    report_data = parse_report_content(report_path)
+    report_data = global_report_control.parse_report_content(report_path)
     return jsonify(report_data)
 
 
@@ -940,29 +330,18 @@ def filter_data():
     """API接口，根据筛选条件返回过滤后的数据"""
     # 获取筛选参数
     filter_type = request.args.get('type', 'all')
-    search_term = request.args.get('search', '').lower().strip()
-    
-    # 解析报告数据
+    search_term = request.args.get('search', '')
     report_path = request.args.get('file', DEFAULT_REPORT_PATH)
-    report_data = parse_report_content(report_path)
     
-    # 应用筛选条件
-    filtered_opportunities = []
-    
-    for opportunity in report_data['opportunities']:
-        # 应用操作类型筛选
-        action_match = (filter_type == 'all' or filter_type in opportunity['action'])
-        # 应用搜索筛选
-        search_match = (search_term == '' or search_term in opportunity['symbol'].lower())
-        
-        if action_match and search_match:
-            filtered_opportunities.append(opportunity)
+    # 使用report_control中的筛选方法
+    filtered_data = global_report_control.filter_opportunities(
+        file_path=report_path,
+        filter_type=filter_type,
+        search_term=search_term
+    )
     
     # 返回过滤后的数据
-    return jsonify({
-        'opportunities': filtered_opportunities,
-        'total': len(filtered_opportunities)
-    })
+    return jsonify(filtered_data)
 
 
 @app.route('/balance')
@@ -998,6 +377,9 @@ def api_balance():
             'error': str(e),
             'errorType': type(e).__name__
         })
+
+
+# 仓位API路由已在文件末尾定义
 
 
 @app.route('/orders')
@@ -1222,192 +604,8 @@ def api_cancel_stop_order():
 
 
 
-def get_okx_stop_orders():
-    """获取OKX交易所的止盈止损订单数据，使用官方SDK的orders-algo-pending接口"""
-    print("=== 开始获取OKX止盈止损订单数据 ===")
-    # 如果没有成功连接到OKX官方API或API密钥未配置，返回空数据
-    if not okx_official_api:
-        print("OKX官方API实例未初始化 - 将返回空数据")
-        return []
-    
-    try:
-        print("正在调用OKX官方API /api/v5/trade/orders-algo-pending获取止盈止损订单...")
-        
-        # 使用OKX官方API调用orders-algo-pending接口，指定instType为SWAP
-        # 止盈止损订单类型可以是：conditional, oco, trigger, iceberg, twap
-        response = okx_official_api.order_algos_list(
-            instType='SWAP',  # 指定合约类型为永续合约
-            ordType='conditional,oco',  # 止盈止损相关的算法订单类型
-            limit='100'  # 获取最多100条记录
-        )
-        
-        # 检查响应是否成功
-        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0' and 'data' in response:
-            stop_orders = response['data']
-            print(f"成功获取到{len(stop_orders)}个止盈止损订单")
-            
-            # 格式化订单数据
-            formatted_orders = []
-            for order in stop_orders:
-                # 构建符合我们格式的订单数据
-                formatted_order = {
-                    'id': order.get('algoId', ''),
-                    'symbol': order.get('instId', ''),
-                    'type': order.get('ordType', ''),
-                    'side': order.get('side', ''),
-                    'price': float(order.get('ordPx', 0)) if order.get('ordPx') else None,
-                    'trigger_price': float(order.get('triggerPx', 0)) if order.get('triggerPx') else None,
-                    # 添加止盈相关字段
-                    'tp_trigger_price': float(order.get('tpTriggerPx', 0)) if order.get('tpTriggerPx') else None,
-                    'tp_ord_price': float(order.get('tpOrdPx', 0)) if order.get('tpOrdPx') else None,
-                    'tp_trigger_type': order.get('tpTriggerPxType', ''),
-                    # 添加止损相关字段
-                    'sl_trigger_price': float(order.get('slTriggerPx', 0)) if order.get('slTriggerPx') else None,
-                    'sl_ord_price': float(order.get('slOrdPx', 0)) if order.get('slOrdPx') else None,
-                    'sl_trigger_type': order.get('slTriggerPxType', ''),
-                    # 其他原有字段
-                    'amount': float(order.get('sz', 0)) if order.get('sz') else 0,
-                    'remaining': float(order.get('sz', 0)) if order.get('sz') else 0,  # 算法订单没有部分成交的概念
-                    'status': order.get('state', ''),
-                    'datetime': datetime.fromtimestamp(int(order.get('cTime', '0')) / 1000).strftime('%Y-%m-%d %H:%M:%S') if order.get('cTime') else '',
-                    'description': f"{order.get('side', '').capitalize()} {order.get('ordType', '')} {order.get('instId', '')}"
-                }
-                formatted_orders.append(formatted_order)
-            
-            return formatted_orders
-        else:
-            error_msg = response.get('msg', '未知错误') if response else '无响应'
-            print(f"获取止盈止损订单数据失败，响应: {error_msg}")
-            return []
-    except Exception as e:
-        print(f"获取止盈止损订单数据时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return []
-
-
-def cancel_okx_stop_order(order_id, symbol):
-    """取消OKX交易所的止盈止损订单，使用官方SDK的cancel_algo_order接口"""
-    print(f"=== 开始取消OKX止盈止损订单: {order_id}, {symbol} ===")
-    # 如果没有成功连接到OKX官方API或API密钥未配置，返回失败
-    if not okx_official_api:
-        print("OKX官方API实例未初始化 - 无法取消订单")
-        return False
-    
-    try:
-        print("正在调用OKX官方API /api/v5/trade/cancel-algos取消止盈止损订单...")
-        # 使用OKX官方API调用cancel_algo_order接口取消算法订单
-        response = okx_official_api.cancel_algo_order(
-            algoId=order_id,
-            instId=symbol
-        )
-        
-        # 检查响应是否成功
-        if response and isinstance(response, dict) and 'code' in response and response['code'] == '0':
-            print(f"止盈止损订单取消成功: {order_id}")
-            return True
-        else:
-            error_msg = response.get('msg', '未知错误') if response else '无响应'
-            print(f"止盈止损订单取消失败: {error_msg}")
-            return False
-    except Exception as e:
-        print(f"取消止盈止损订单时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return False
-
-
-def modify_okx_stop_order(order_id, symbol, new_tp_ord_price, new_tp_trigger_price, new_amount, new_sl_trigger_price):
-    """修改OKX交易所的止盈止损订单，使用官方SDK的amend-algo-order接口"""
-    print(f"=== 开始修改OKX止盈止损订单: {order_id}, {symbol} ===")
-    
-    # 如果没有成功连接到OKX官方API或API密钥未配置，返回失败
-    if not okx_official_api:
-        print("OKX官方API实例未初始化 - 无法修改订单")
-        return False
-    
-    try:
-        print(f"正在使用OKX官方SDK的amend-algo-order接口修改止盈止损订单...")
-        
-        # 构建修改算法订单的参数
-        amend_params = {
-            'algoId': order_id,
-            'instId': symbol
-        }
-        
-        # 添加可以修改的参数
-        if new_tp_ord_price is not None:
-            amend_params['newTpOrdPx'] = str(new_tp_ord_price)
-        if new_tp_trigger_price is not None:
-            amend_params['newTpTriggerPx'] = str(new_tp_trigger_price)
-        if new_sl_trigger_price is not None:
-            amend_params['newSlTriggerPx'] = str(new_sl_trigger_price)
-        if new_amount is not None:
-            amend_params['newSz'] = str(new_amount)
-        
-        # 使用OKX官方API调用amend-algo-order接口修改算法订单
-        response = okx_official_api.amend_algo_order(**amend_params)
-        
-        # 检查响应是否成功
-        if response and isinstance(response, dict) and 'code' in response:
-            if response['code'] == '0':
-                print(f"止盈止损订单修改成功")
-                return True
-            else:
-                error_msg = response.get('msg', '未知错误')
-                print(f"修改止盈止损订单失败: {error_msg}")
-                return False
-        else:
-            print(f"修改止盈止损订单失败，无有效响应")
-            return False
-    except Exception as e:
-        print(f"修改止盈止损订单时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return False
-
-
-# 导入合约工具函数
+# 导入合约工具函数 - 供后续可能使用
 import contract_utils
-
-def get_okx_positions():
-    """获取OKX交易所的当前仓位数据"""
-    print("=== 开始获取OKX当前仓位数据 ===")
-    # 如果没有成功连接到OKX或API密钥未配置，返回空数据
-    if not okx_exchange:
-        print("OKX连接状态: 未连接 - 将返回空数据")
-        return []
-    
-    try:
-        print("正在调用OKX API获取当前仓位...")
-        
-        # 调用lib.py中的通用函数，设置use_contract_utils=True以使用contract_utils计算成本
-        # 添加相对导入路径
-        import sys
-        import os
-        
-        # 添加项目根目录到路径
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if project_root not in sys.path:
-            sys.path.append(project_root)
-        
-        # 导入通用函数
-        from lib import get_okx_positions as lib_get_okx_positions
-        
-        # 调用通用函数
-        formatted_positions = lib_get_okx_positions(okx_exchange, use_contract_utils=True)
-        
-        print(f"成功获取到{len(formatted_positions)}个有效仓位")
-        return formatted_positions
-    except Exception as e:
-        print(f"获取当前仓位数据时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return []
 
 
 def get_okx_history_positions():
@@ -1720,50 +918,12 @@ def api_modify_stop_order():
     try:
         # 获取请求参数
         data = request.get_json()
-        order_id = data.get('order_id')
-        symbol = data.get('symbol')
-        new_tp_trigger_price = data.get('new_tp_trigger_price')
-        new_tp_ord_price = data.get('new_tp_ord_price')
-        new_sl_trigger_price = data.get('new_sl_trigger_price')
-        new_amount = data.get('new_amount')
         
-        if not order_id or not symbol or new_amount is None:
-            return jsonify({
-                'success': False,
-                'error': '缺少必要参数: order_id, symbol, new_amount'
-            })
+        # 调用OKXControl实例的处理方法
+        result = global_okx_control.handle_modify_stop_order_request(data)
         
-        # 转换价格和数量为浮点数
-        try:
-            new_tp_trigger_price = float(new_tp_trigger_price) if new_tp_trigger_price is not None else None
-            new_tp_ord_price = float(new_tp_ord_price) if new_tp_ord_price is not None else None
-            new_sl_trigger_price = float(new_sl_trigger_price) if new_sl_trigger_price is not None else None
-            new_amount = float(new_amount)
-        except ValueError:
-            return jsonify({
-                'success': False,
-                'error': '价格和数量必须为数字'
-            })
-        
-        # 打印请求信息
-        print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"修改止盈止损订单: {order_id}, {symbol}, 新止盈触发价格: {new_tp_trigger_price}, 新止盈委托价格: {new_tp_ord_price}, 新止损触发价格: {new_sl_trigger_price}, 新数量: {new_amount}")
-        
-        # 修改订单
-        result = modify_okx_stop_order(order_id, symbol, new_tp_ord_price, new_tp_trigger_price, new_amount, new_sl_trigger_price)
-        
-        if result:
-            print("止盈止损订单修改成功")
-            return jsonify({
-                'success': True,
-                'message': '止盈止损订单修改成功'
-            })
-        else:
-            print("止盈止损订单修改失败")
-            return jsonify({
-                'success': False,
-                'error': '止盈止损订单修改失败'
-            })
+        # 返回JSON响应
+        return jsonify(result)
     except Exception as e:
         print(f"修改止盈止损订单时发生错误: {e}")
         # 打印更详细的错误信息
@@ -1902,17 +1062,38 @@ def convert_closed_orders_to_trades(closed_orders):
     return trades
 
 
+# 将全局API实例注入到控制器中
+global_report_control.default_report_path = DEFAULT_REPORT_PATH
+global_okx_control.set_api_clients(
+    okx_exchange=okx_exchange,
+    okx_official_api=okx_official_api,
+    okx_account_api=okx_account_api,
+    okx_public_api=okx_public_api
+)
+global_leverage_control.set_api_clients(
+    okx_public_api=okx_public_api,
+    okx_account_api=okx_account_api
+)
+
+# 将控制器实例注入到路由模块
+import routes.report_routes
+import routes.okx_routes
+import routes.config_routes
+import routes.leverage_routes
+import routes.auth_routes
+
+routes.report_routes.report_control = global_report_control
+routes.okx_routes.okx_control = global_okx_control
+routes.config_routes.config_control = global_config_control
+routes.leverage_routes.leverage_control = global_leverage_control
+routes.auth_routes.auth_control = global_auth_control
+
 # 注册路由蓝图到Flask应用
 app.register_blueprint(auth_bp)
 app.register_blueprint(report_bp)
 app.register_blueprint(okx_bp)
 app.register_blueprint(config_bp)
 app.register_blueprint(leverage_bp)
-
-# 将全局API实例赋值给leverage_routes模块中的全局变量
-import routes.leverage_routes
-routes.leverage_routes.okx_public_api = okx_public_api
-routes.leverage_routes.okx_account_api = okx_account_api
 
 # 启动Flask应用（生产环境应使用专业Web服务器）
 app.run(host='0.0.0.0', debug=False)

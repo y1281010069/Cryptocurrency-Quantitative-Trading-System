@@ -216,9 +216,49 @@
             .then(data => {
                 document.getElementById('loading-orders').classList.add('hidden');
                 
+                // 处理后端返回的数据格式，进行字段映射
+                let formattedOrders = [];
                 if (data.success && data.data && data.data.length > 0) {
+                    formattedOrders = data.data.map(order => ({
+                        // 映射字段名称
+                        id: order.order_id || order.algoId,  // 订单ID映射
+                        symbol: order.symbol || order.instId, // 交易对映射
+                        side: order.side, // 交易方向
+                        type: order.type || 'conditional', // 订单类型
+                        status: mapOrderStatus(order.status), // 状态映射
+                        datetime: formatDateTime(order.created_time || order.cTime), // 时间格式化
+                        // 止盈止损价格映射 - 优先使用tpTriggerPx和slTriggerPx
+                        tp_trigger_price: order.tpTriggerPx || order.trigger_price,
+                        tp_ord_price: order.tp_price || -1, // 使用后端返回的tp_price作为止盈委托价
+                        sl_trigger_price: order.slTriggerPx || order.sl_price,
+                        sl_ord_price: -1, // 默认为市价
+                        tp_trigger_type: order.triggerType || 'last',
+                        sl_trigger_type: order.triggerType || 'last',
+                        // 数量映射
+                        amount: order.quantity || order.sz || 0
+                    }));
+                } else if (data.stop_orders && data.stop_orders.length > 0) {
+                    // 处理直接返回stop_orders的情况
+                    formattedOrders = data.stop_orders.map(order => ({
+                        id: order.order_id || order.algoId,
+                        symbol: order.symbol || order.instId,
+                        side: order.side,
+                        type: order.type || order.ordType || 'conditional',
+                        status: mapOrderStatus(order.status || order.state),
+                        datetime: formatDateTime(order.created_time || order.cTime),
+                        tp_trigger_price: order.tpTriggerPx || order.trigger_price,
+                        tp_ord_price: order.tp_price || -1,
+                        sl_trigger_price: order.slTriggerPx || order.sl_price,
+                        sl_ord_price: -1,
+                        tp_trigger_type: order.triggerType || 'last',
+                        sl_trigger_type: order.triggerType || 'last',
+                        amount: order.quantity || order.sz || 0
+                    }));
+                }
+                
+                if (formattedOrders.length > 0) {
                     const ordersContainer = document.getElementById('orders-container');
-                    data.data.forEach(order => {
+                    formattedOrders.forEach(order => {
                         const orderCard = createOrderCard(order);
                         ordersContainer.appendChild(orderCard);
                     });
@@ -235,6 +275,44 @@
                 document.getElementById('no-orders').classList.remove('hidden');
                 showToast('加载止盈止损订单数据失败', 'error');
             });
+    }
+    
+    // 映射订单状态
+    function mapOrderStatus(status) {
+        const statusMap = {
+            'live': 'active',
+            'effective': 'active',
+            'canceled': 'canceled',
+            'triggered': 'triggered',
+            'partially_filled': 'triggered'
+        };
+        return statusMap[status] || status;
+    }
+    
+    // 格式化日期时间
+    function formatDateTime(timestamp) {
+        if (!timestamp) return '';
+        
+        try {
+            // 处理时间戳格式
+            const date = new Date(timestamp);
+            if (isNaN(date.getTime())) {
+                // 如果是字符串格式，尝试解析
+                return timestamp.substring(0, 19).replace('T', ' ');
+            }
+            
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        } catch (e) {
+            console.error('日期格式化错误:', e);
+            return timestamp;
+        }
     }
     
     // 创建止盈止损订单卡片
@@ -267,14 +345,14 @@
         
         const priceDisplay = order.price ? order.price.toFixed(6) : '市价';
         const triggerPriceDisplay = order.trigger_price ? order.trigger_price.toFixed(6) : '-';
-        // 止盈相关价格显示
-        const tpTriggerPriceDisplay = order.tp_trigger_price ? order.tp_trigger_price.toFixed(6) : '-';
-        const tpOrdPriceDisplay = order.tp_ord_price ? (order.tp_ord_price === -1 ? '市价' : order.tp_ord_price.toFixed(6)) : '-';
+        // 止盈相关价格显示 - 确保数值转换正确
+        const tpTriggerPriceDisplay = order.tp_trigger_price ? parseFloat(order.tp_trigger_price).toFixed(6) : '-';
+        const tpOrdPriceDisplay = order.tp_ord_price ? (order.tp_ord_price === -1 ? '市价' : parseFloat(order.tp_ord_price).toFixed(6)) : '-';
         const tpTriggerTypeDisplay = order.tp_trigger_type ? order.tp_trigger_type : '-';
-        // 止损相关价格显示
-        const slTriggerPriceDisplay = order.sl_trigger_price ? order.sl_trigger_price.toFixed(6) : '-';
-        const slOrdPriceDisplay = order.sl_ord_price ? (order.sl_ord_price === -1 ? '市价' : order.sl_ord_price.toFixed(6)) : '-';
-        const slTriggerTypeDisplay = order.sl_trigger_type ? order.sl_trigger_type : '-';
+        // 止损相关价格显示 - 确保数值转换正确
+        const slTriggerPriceDisplay = order.sl_trigger_price ? parseFloat(order.sl_trigger_price).toFixed(6) : '-';
+        const slOrdPriceDisplay = order.sl_ord_price ? (order.sl_ord_price === -1 ? '市价' : parseFloat(order.sl_ord_price).toFixed(6)) : '-';
+        const slTriggerTypeDisplay = order.sl_trigger_type ? order.sl_trigger_type : '-'
         
         card.innerHTML = `
             <div class="flex justify-between items-start mb-2">
@@ -434,6 +512,8 @@
                 body: JSON.stringify({
                     order_id: currentOrder.id,
                     symbol: currentOrder.symbol,
+                    side: currentOrder.side,
+                    type: currentOrder.type,
                     new_tp_trigger_price: newTpTriggerPrice,
                     new_tp_ord_price: newTpOrdPrice,
                     new_sl_trigger_price: newSlTriggerPrice,

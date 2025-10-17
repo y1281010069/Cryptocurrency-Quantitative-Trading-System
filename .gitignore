@@ -19,7 +19,6 @@ trade_signals/
 # 分析报告和输出文件
 分析报告/
 reports/
-multi_timeframe_reports/
 *.xlsx
 *.csv
 test/*_data_analysis.txt

@@ -200,7 +200,7 @@ class BaseStrategy(abc.ABC):
         logger = logging.getLogger(__name__)
         
         # 创建需要关注的持仓目录
-        attention_dir = "positions_needing_attention"
+        attention_dir = "reports/positions_needing_attention"
         os.makedirs(attention_dir, exist_ok=True)
         
         # 文件名格式：positions_needing_attention_YYYYMMDD_HHMMSS.txt

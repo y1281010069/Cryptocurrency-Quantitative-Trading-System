@@ -1,120 +1,120 @@
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, jsonify, session
 from datetime import datetime
-import time
+import json
+from control.okx_control import OKXControl
 
 # 创建OKX相关路由蓝图
-okx_bp = Blueprint('okx', __name__)
+okx_bp = Blueprint('okx', __name__, url_prefix='/')
 
-# 声明全局变量，这些变量将在app.py中初始化
-okx_official_api = None
-okx_account_api = None
-okx_exchange = None
+# 初始化OKX控制器（将在app.py中设置API客户端）
+okx_control = OKXControl()
 
 @okx_bp.route('/balance')
-def balance_page():
-    """OKX余额查询页面"""
-    return render_template('balance.html', now=datetime.now())
+def balance():
+    # 检查用户是否已登录
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': '请先登录'}), 401
+    
+    # 创建当前时间对象
+    now = datetime.now()
+    
+    try:
+        # 使用OKXControl获取余额
+        balances = okx_control.get_balances(use_ccxt=False)  # 使用官方API
+        
+        # 处理错误情况
+        if 'error' in balances:
+            return render_template('balance.html', error=balances['error'], username=session.get('username'), now=now)
+        
+        return render_template('balance.html', balances=balances, username=session.get('username'), now=now)
+    except Exception as e:
+        error_msg = f'获取余额失败: {str(e)}'
+        print(error_msg)
+        return render_template('balance.html', error=error_msg, username=session.get('username'), now=now)
 
-@okx_bp.route('/api/get_balance')
+@okx_bp.route('/api/balance')
 def api_get_balance():
-    """API接口，获取OKX账户余额信息"""
-    print("=== 收到/api/get_balance请求 ===")
+    # 检查用户是否已登录
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': '请先登录'}), 401
+    
     try:
-        # 检查API实例是否初始化
-        if not okx_account_api:
-            return jsonify({
-                'success': False,
-                'message': 'OKX API未初始化成功，请检查API密钥配置'
-            })
+        # 使用OKXControl获取详细余额
+        result = okx_control.get_detailed_okx_balance()
         
-        # 调用 /api/v5/account/balance 获取账户余额
-        balance_response = okx_account_api.get_balances()
-        
-        if not balance_response or balance_response.get('code') != '0':
-            error_msg = f'获取余额失败: {balance_response.get("msg", "未知错误")}'
-            print(error_msg)
-            return jsonify({
-                'success': False,
-                'message': error_msg
-            })
-        
-        # 处理余额数据
-        balances = balance_response.get('data', [])
-        print(f"成功获取OKX账户余额信息，包含{len(balances)}个币种")
-        
-        # 返回余额数据
-        return jsonify({
-            'success': True,
-            'data': balances
-        })
-        
+        if result['success']:
+            return jsonify({'status': 'success', 'data': result['data']})
+        else:
+            return jsonify({'status': 'error', 'message': result['error']})
     except Exception as e:
-        print(f"获取余额时发生错误: {e}")
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return jsonify({
-            'success': False,
-            'message': f'获取余额时发生错误: {str(e)}'
-        })
+        error_msg = f'获取余额失败: {str(e)}'
+        print(error_msg)
+        return jsonify({'status': 'error', 'message': error_msg})
 
-@okx_bp.route('/positions')
-def positions_page():
-    """OKX持仓查询页面"""
-    return render_template('positions.html', now=datetime.now())
 
-@okx_bp.route('/api/get_positions')
-def api_get_positions():
-    """API接口，获取OKX账户持仓信息"""
-    print("=== 收到/api/get_positions请求 ===")
-    try:
-        # 检查API实例是否初始化
-        if not okx_account_api:
-            return jsonify({
-                'success': False,
-                'message': 'OKX API未初始化成功，请检查API密钥配置'
-            })
-        
-        # 调用 /api/v5/account/positions 获取持仓信息
-        positions_response = okx_account_api.get_positions()
-        
-        if not positions_response or positions_response.get('code') != '0':
-            error_msg = f'获取持仓失败: {positions_response.get("msg", "未知错误")}'
-            print(error_msg)
-            return jsonify({
-                'success': False,
-                'message': error_msg
-            })
-        
-        # 处理持仓数据
-        positions = positions_response.get('data', [])
-        print(f"成功获取OKX账户持仓信息，包含{len(positions)}个持仓")
-        
-        # 返回持仓数据
-        return jsonify({
-            'success': True,
-            'data': positions
-        })
-        
-    except Exception as e:
-        print(f"获取持仓时发生错误: {e}")
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
-        return jsonify({
-            'success': False,
-            'message': f'获取持仓时发生错误: {str(e)}'
-        })
 
 @okx_bp.route('/orders')
-def orders_page():
-    """OKX订单查询页面"""
-    return render_template('orders.html', now=datetime.now())
+def orders():
+    # 检查用户是否已登录
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': '请先登录'}), 401
+    
+    # 创建当前时间对象
+    now = datetime.now()
+    
+    try:
+        # 使用OKXControl获取订单
+        orders_data = okx_control.get_orders()
+        
+        if 'error' in orders_data:
+            return render_template('orders.html', error=orders_data['error'], username=session.get('username'), now=now)
+        
+        return render_template('orders.html', orders=orders_data, username=session.get('username'), now=now)
+    except Exception as e:
+        error_msg = f'获取订单失败: {str(e)}'
+        print(error_msg)
+        return render_template('orders.html', error=error_msg, username=session.get('username'), now=now)
 
 @okx_bp.route('/stop_orders')
-def stop_orders_page():
-    """OKX止损止盈订单查询页面"""
-    return render_template('stop_orders.html', now=datetime.now())
+def stop_orders():
+    # 检查用户是否已登录
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': '请先登录'}), 401
+    
+    # 创建当前时间对象
+    now = datetime.now()
+    
+    try:
+        # 使用OKXControl获取止损止盈订单
+        stop_orders_data = okx_control.get_stop_orders()
+        
+        if 'error' in stop_orders_data:
+            return render_template('stop_orders.html', error=stop_orders_data['error'], username=session.get('username'), now=now)
+        
+        return render_template('stop_orders.html', stop_orders=stop_orders_data, username=session.get('username'), now=now)
+    except Exception as e:
+        error_msg = f'获取止损止盈订单失败: {str(e)}'
+        print(error_msg)
+        return render_template('stop_orders.html', error=error_msg, username=session.get('username'), now=now)
 
 @okx_bp.route('/history_positions')
-def history_positions_page():
-    """OKX历史持仓查询页面"""
-    return render_template('history_positions.html', now=datetime.now())
+def history_positions():
+    # 检查用户是否已登录
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': '请先登录'}), 401
+    
+    # 创建当前时间对象
+    now = datetime.now()
+    
+    try:
+        # 使用OKXControl获取历史持仓
+        history_positions_data = okx_control.get_history_positions()
+        
+        if 'error' in history_positions_data:
+            return render_template('history_positions.html', error=history_positions_data['error'], username=session.get('username'), now=now)
+        
+        return render_template('history_positions.html', positions=history_positions_data, username=session.get('username'), now=now)
+    except Exception as e:
+        error_msg = f'获取历史持仓失败: {str(e)}'
+        print(error_msg)
+        return render_template('history_positions.html', error=error_msg, username=session.get('username'), now=now)

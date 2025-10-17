@@ -55,20 +55,9 @@ TRADING_CONFIG = {
 
 # 配置日志记录器
 logger = logging.getLogger(__name__)
-
-# 配置日志格式，包含代码位置信息
-log_format = '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
-logging.basicConfig(
-    level=logging.INFO,
-    format=log_format,
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-
-# 确保logger使用相同的格式
-for handler in logger.handlers:
-    handler.setFormatter(logging.Formatter(log_format))
+# 使用从根记录器继承的配置，避免重复日志输出
+# 如果需要特定配置，可以在这里单独设置，但不要使用logging.basicConfig()
+logger.setLevel(logging.INFO)
 
 # 导入项目模块
 from strategies.base_strategy import BaseStrategy
@@ -676,7 +665,7 @@ class MultiTimeframeStrategy(BaseStrategy):
     def save_positions_needing_attention(self, positions: List[Dict[str, Any]]) -> str:
         """保存需要关注的持仓信息"""
         # 创建需要关注的持仓目录
-        attention_dir = "positions_needing_attention"
+        attention_dir = "reports/positions_needing_attention"
         os.makedirs(attention_dir, exist_ok=True)
         
         # 文件名格式：positions_needing_attention_YYYYMMDD_HHMMSS.txt

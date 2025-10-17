@@ -743,8 +743,8 @@ class BacktestEngine:
         # 保存交易记录（模拟记录）
         if self.trades:
             # 创建结果目录
-            os.makedirs('multi_timeframe_reports', exist_ok=True)
-            report_filename = os.path.join('multi_timeframe_reports', f'btc_backtest_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+            os.makedirs('reports/multi_timeframe_reports', exist_ok=True)
+            report_filename = os.path.join('reports/multi_timeframe_reports', f'btc_backtest_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
             
             with open(report_filename, 'w', encoding='utf-8') as f:
                 # 将datetime转换为字符串以便JSON序列化
@@ -792,4 +792,4 @@ if __name__ == "__main__":
     backtest.run_backtest()
     
     logger.info("回测完成")
-    logger.info("所有交易均为模拟记录，已保存到multi_timeframe_reports目录")
+    logger.info("所有交易均为模拟记录，已保存到reports/multi_timeframe_reports目录")

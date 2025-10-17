@@ -91,24 +91,14 @@
                             <span>止盈止损订单</span>
                         </a>
                     </li>
-                    <li>
-                        <a href="/positions" class="flex items-center px-4 py-2 text-gray-700 hover:bg-primary/10 hover:text-primary rounded-lg transition duration-200 {{ 'bg-primary/10 text-primary' if request.path == '/positions' else '' }}">
-                            <i class="fa fa-briefcase w-5 text-center mr-3"></i>
-                            <span>当前仓位</span>
-                        </a>
-                    </li>
+
                     <li>
                         <a href="/history_positions" class="flex items-center px-4 py-2 text-gray-700 hover:bg-primary/10 hover:text-primary rounded-lg transition duration-200 {{ 'bg-primary/10 text-primary' if request.path == '/history_positions' else '' }}">
                             <i class="fa fa-history w-5 text-center mr-3"></i>
                             <span>历史仓位</span>
                         </a>
                     </li>
-                    <li>
-                        <a href="/trading_config" class="flex items-center px-4 py-2 text-gray-700 hover:bg-primary/10 hover:text-primary rounded-lg transition duration-200 {{ 'bg-primary/10 text-primary' if request.path == '/trading_config' else '' }}">
-                            <i class="fa fa-cog w-5 text-center mr-3"></i>
-                            <span>交易配置修改</span>
-                        </a>
-                    </li>
+
                     <li>
                         <a href="/set_max_leverage" class="flex items-center px-4 py-2 text-gray-700 hover:bg-primary/10 hover:text-primary rounded-lg transition duration-200 {{ 'bg-primary/10 text-primary' if request.path == '/set_max_leverage' else '' }}">
                             <i class="fa fa-bolt w-5 text-center mr-3"></i>
