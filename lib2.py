@@ -187,13 +187,14 @@ def get_okx_positions(exchange, use_contract_utils=False):
         logger.error(f"获取仓位数据失败: {e}")
         return []
 
-def send_trading_signal_to_api(signal, name, logger_param=None):
+def send_trading_signal_to_api(signal, name, logger_param=None, LOSS=None):
     """发送交易信号到API
     
     Args:
         signal: 交易信号对象，包含symbol、overall_action、target_short、stop_loss等属性
         name: 信号名称
         logger_param: 可选的日志记录器，如果不提供则使用默认logger
+        LOSS: 可选的损失参数，如果不提供则使用配置中的默认值
     
     Returns:
         bool: 是否成功发送信号
@@ -211,13 +212,16 @@ def send_trading_signal_to_api(signal, name, logger_param=None):
         ac_type = 'o_l' if signal.overall_action == '买入' else 'o_s'
         
         # 构造请求参数
+        # 使用传入的LOSS值，如果未提供则使用配置中的默认值
+        loss_value = LOSS if LOSS is not None else TRADING_CONFIG.get('LOSS', 1)
+        
         payload = {
             'name': name,
             'mechanism_id': TRADING_CONFIG.get('MECHANISM_ID', ''),
             'stop_win_price': signal.target_short,
             'stop_loss_price': signal.stop_loss,
             'ac_type': ac_type,
-            'loss': TRADING_CONFIG.get('LOSS', 1)
+            'loss': loss_value
         }
         
         # 发送POST请求（表单形式）

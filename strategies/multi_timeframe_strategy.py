@@ -42,9 +42,9 @@ TRADING_CONFIG = {
         "USDC/USDT"
     ],
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
-    "MAX_POSITIONS": 20,
+    "MAX_POSITIONS": 40,
     "MECHANISM_ID": 14,
-    "LOSS": 1,
+    "LOSS": 1,  # 损失参数，传递给API
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
     "TIMEFRAME_DATA_LENGTHS": {
         '4h': 168,   # 4小时
@@ -68,7 +68,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 导入lib.py文件作为一个模块
 import importlib.util
 # 动态导入lib.py文件
-spec = importlib.util.spec_from_file_location("lib_module", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib.py"))
+spec = importlib.util.spec_from_file_location("lib_module", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib2.py"))
 lib_module = importlib.util.module_from_spec(spec)
 sys.modules["lib_module"] = lib_module
 spec.loader.exec_module(lib_module)
@@ -531,8 +531,10 @@ class MultiTimeframeStrategy(BaseStrategy):
                     # 格式化name参数：从KAITO/USDT转换为KAITO（去掉-USDT后缀）
                     name = signal.symbol.replace('/', '-').replace(':USDT', '')
                     
-                    # 使用lib.py中的send_trading_signal_to_api方法发送交易信号
-                    send_trading_signal_to_api(signal, name, logger)  
+                    # 使用lib2.py中的send_trading_signal_to_api方法发送交易信号，传入LOSS参数
+                    # 从配置中获取LOSS值，如果不存在则使用默认值1
+                    loss_value = self.config.get('LOSS', 1)
+                    send_trading_signal_to_api(signal, name, logger, LOSS=loss_value)  
                 except Exception as e:
                     logger.error(f"发送交易信号到API时发生错误: {e}")
                      

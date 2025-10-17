@@ -19,7 +19,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # 导入lib.py文件作为一个模块
 import importlib.util
 # 动态导入lib.py文件
-spec = importlib.util.spec_from_file_location("lib_module", os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib.py"))
+spec = importlib.util.spec_from_file_location("lib_module", os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib2.py"))
 lib_module = importlib.util.module_from_spec(spec)
 sys.modules["lib_module"] = lib_module
 spec.loader.exec_module(lib_module)
