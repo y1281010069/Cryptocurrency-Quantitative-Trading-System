@@ -852,10 +852,6 @@ class OKXControl:
                     'error': error_msg
                 }
         except Exception as e:
-            print(f"获取止盈止损订单时发生错误: {e}")
-            # 打印更详细的错误信息
-            import traceback
-            print(f"错误堆栈:\n{traceback.format_exc()}")
             return {
                 'stop_orders': [],
                 'count': 0,
@@ -865,7 +861,6 @@ class OKXControl:
     
     def cancel_okx_stop_order(self, order_id, symbol):
         """取消OKX交易所的止盈止损订单，使用官方SDK的cancel_algo_order接口"""
-        print(f"=== 开始取消OKX止盈止损订单: {order_id}, {symbol} ===")
         # 如果没有成功连接到OKX官方API或API密钥未配置，返回失败
         if not self.okx_official_api:
             print("OKX官方API实例未初始化 - 无法取消订单")
@@ -885,19 +880,13 @@ class OKXControl:
                 return {"success": True, "message": "止盈止损订单取消成功"}
             else:
                 error_msg = response.get('msg', '未知错误') if response else '无响应'
-                print(f"止盈止损订单取消失败: {error_msg}")
                 return {"success": False, "message": f"止盈止损订单取消失败: {error_msg}"}
         except Exception as e:
-            print(f"取消止盈止损订单时发生错误: {e}")
-            # 打印更详细的错误信息
-            import traceback
-            print(f"错误堆栈:\n{traceback.format_exc()}")
             return {"success": False, "message": f"取消止盈止损订单时发生错误: {str(e)}"}
     
     def modify_okx_stop_order(self, order_id, symbol, new_tp_ord_price=None, new_tp_trigger_price=None, 
                              new_amount=None, new_sl_trigger_price=None):
         """修改OKX交易所的止盈止损订单，优先使用官方API，支持ccxt作为备用"""
-        print(f"=== 开始修改OKX止盈止损订单: {order_id}, {symbol} ===")
         
         # 检查是否有参数需要修改
         has_modifications = any(x is not None for x in [new_tp_ord_price, new_tp_trigger_price, new_amount, new_sl_trigger_price])

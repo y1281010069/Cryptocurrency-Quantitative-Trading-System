@@ -6,10 +6,10 @@ from decimal import Decimal, getcontext
 getcontext().prec = 20
 
 # 添加项目根目录到Python路径，以便导入models
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # 从数据库获取合约信息
-from models.variety_model import Variety
+from models.variety_model import Variety, variety_model
 from models.db_connection import db
 
 class ContractInfoCache:
@@ -22,11 +22,11 @@ class ContractInfoCache:
         """从数据库加载所有合约信息到缓存"""
         try:
             # 从数据库获取所有合约信息
-            contract_records = Variety.get_all()
+            contract_records = variety_model.get_all()
             if contract_records:
                 for record in contract_records:
                     # 使用合约名称作为缓存键（小写以便不区分大小写查询）
-                    symbol = record.get('variety_name', '').lower()
+                    symbol = record.get('name', '').lower()
                     min_qty = Decimal(str(record.get('minQty', '0')))
                     self.cache[symbol] = min_qty
                 print(f"成功加载{len(self.cache)}个合约信息到缓存")
@@ -44,17 +44,22 @@ class ContractInfoCache:
         
         # 如果缓存中没有，尝试从数据库直接查询
         try:
-            # 尝试多种可能的格式
+            # 尝试多种可能的格式，包括去掉-swap后缀
+            base_symbol = symbol.replace('-swap', '') if '-swap' in symbol else symbol
             formats_to_try = [
                 symbol,
+                base_symbol,  # 去掉-swap后缀的版本
                 symbol.replace('-', '/'),
+                base_symbol.replace('-', '/'),
                 symbol.upper(),
-                symbol.replace('-', '/').upper()
+                base_symbol.upper(),
+                symbol.replace('-', '/').upper(),
+                base_symbol.replace('-', '/').upper()
             ]
             
             for format_attempt in formats_to_try:
                 # 使用数据库模型查询
-                contract_info = Variety.get(variety_name=format_attempt)
+                contract_info = variety_model.get(name=format_attempt)
                 if contract_info and 'minQty' in contract_info:
                     min_qty = Decimal(str(contract_info['minQty']))
                     # 更新缓存

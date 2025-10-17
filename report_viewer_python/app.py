@@ -8,17 +8,17 @@ import ccxt
 from datetime import datetime, timedelta
 from functools import wraps
 
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # 导入合约工具模块
-import contract_utils
+from lib.tool import contract_utils
 
 # 导入OKX官方Python包
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib', 'python-okx-master'))
 from okx.Trade import TradeAPI
 from okx.Account import AccountAPI
 from okx.PublicData import PublicAPI
-
-# 添加项目根目录到Python路径
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 尝试导入配置
 config = None
@@ -502,22 +502,16 @@ def api_modify_order():
         result = modify_okx_order(order_id, symbol, new_price, new_amount)
         
         if result:
-            print("订单修改成功")
             return jsonify({
                 'success': True,
                 'message': '订单修改成功'
             })
         else:
-            print("订单修改失败")
             return jsonify({
                 'success': False,
                 'error': '订单修改失败'
             })
     except Exception as e:
-        print(f"修改订单时发生错误: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        print(f"错误堆栈:\n{traceback.format_exc()}")
         return jsonify({
             'success': False,
             'error': str(e),
@@ -605,7 +599,7 @@ def api_cancel_stop_order():
 
 
 # 导入合约工具函数 - 供后续可能使用
-import contract_utils
+from lib.tool import contract_utils
 
 
 def get_okx_history_positions():
@@ -684,7 +678,7 @@ def get_okx_history_positions():
                 # 放宽过滤条件，不再严格要求adjEq字段存在
                 if isinstance(position, dict) and 'instId' in position:
                     # 打印原始数据以便调试
-                    print(f"处理原始仓位数据: {position}")
+                    # print(f"处理原始仓位数据: {position}")
                     
                     # 获取必要的数据
                     symbol = position.get('instId', '')
@@ -774,7 +768,7 @@ def get_okx_history_positions():
                             'posSide': pos_side  # 添加仓位方向信息
                         }
                         formatted_positions.append(formatted_position)
-                        print(f"成功格式化一条历史仓位数据: {formatted_position}")
+                        # print(f"成功格式化一条历史仓位数据: {formatted_position}")
                     else:
                         print(f"跳过空仓位: {position}")
                 # 处理get_orders_history接口返回的数据格式（备选方案）

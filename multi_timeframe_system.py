@@ -12,10 +12,22 @@ import numpy as np
 import talib as ta
 from strategies.base_strategy import BaseStrategy
 from strategies.multi_timeframe_strategy import MultiTimeframeStrategy, MultiTimeframeSignal
-from lib import (
-    get_okx_positions, calculate_atr, send_position_info_to_api,
-    send_trading_signal_to_api
-)
+import sys
+import os
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# 导入lib.py文件作为一个模块
+import importlib.util
+# 动态导入lib.py文件
+spec = importlib.util.spec_from_file_location("lib_module", os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib.py"))
+lib_module = importlib.util.module_from_spec(spec)
+sys.modules["lib_module"] = lib_module
+spec.loader.exec_module(lib_module)
+# 从导入的模块中获取函数
+calculate_atr = lib_module.calculate_atr
+send_position_info_to_api = lib_module.send_position_info_to_api
+send_trading_signal_to_api = lib_module.send_trading_signal_to_api
+get_okx_positions = lib_module.get_okx_positions
 # 只导入必要的配置，不再导入TRADING_CONFIG
 from config import REDIS_CONFIG, API_KEY, SECRET_KEY, PASSPHRASE, OKX_CONFIG
 

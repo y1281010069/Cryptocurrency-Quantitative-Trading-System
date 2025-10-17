@@ -119,7 +119,7 @@ def get_okx_positions(exchange, use_contract_utils=False):
             if use_contract_utils:
                 try:
                     # 仅在需要时导入contract_utils
-                    import contract_utils
+                    from lib.tool import contract_utils
                     amount = float(position.get('contracts', 0))
                     cost = contract_utils.calculate_cost(amount, entry_price, symbol)
                     profit_percent = (profit / cost * 100) if cost > 0 else 0

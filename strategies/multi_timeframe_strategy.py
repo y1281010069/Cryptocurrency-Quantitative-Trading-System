@@ -61,9 +61,22 @@ logger.setLevel(logging.INFO)
 
 # 导入项目模块
 from strategies.base_strategy import BaseStrategy
-from lib import calculate_atr, send_trading_signal_to_api
+import sys
+import os
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 导入lib.py文件作为一个模块
+import importlib.util
+# 动态导入lib.py文件
+spec = importlib.util.spec_from_file_location("lib_module", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib.py"))
+lib_module = importlib.util.module_from_spec(spec)
+sys.modules["lib_module"] = lib_module
+spec.loader.exec_module(lib_module)
+# 从导入的模块中获取函数
+calculate_atr = lib_module.calculate_atr
+send_trading_signal_to_api = lib_module.send_trading_signal_to_api
+get_okx_positions = lib_module.get_okx_positions
 from okx.Account import AccountAPI
-from lib import get_okx_positions
 from config import REDIS_CONFIG
 
 
@@ -484,7 +497,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         # 只有当有交易信号时才生成文件
         if len(trade_signals) > 0:
             # 创建交易信号目录
-            signal_dir = "trade_signals"
+            signal_dir = "reports/trade_signals"
             os.makedirs(signal_dir, exist_ok=True)
             
             # 文件名格式：trade_signals_YYYYMMDD_HHMMSS.txt
