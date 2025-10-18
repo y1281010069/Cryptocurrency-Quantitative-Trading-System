@@ -48,6 +48,7 @@ class MultiTimeframeProfessionalSystem:
         self.exchange = None
         self.strategies = {}
         self.output_dir = "reports"
+        self.logger = logging.getLogger(__name__)  # 使用与全局相同的logger名称
         os.makedirs(self.output_dir, exist_ok=True)
         
         # 初始化交易所连接
@@ -75,15 +76,15 @@ class MultiTimeframeProfessionalSystem:
             
             # 测试连接是否成功
             self.exchange.fetch_balance()
-            logger.info("✅ 交易所连接成功!")
+            self.logger.info("✅ 交易所连接成功!")
         except Exception as e:
-            logger.error(f"❌ 交易所连接失败: {e}")
+            self.logger.error(f"❌ 交易所连接失败: {e}")
             raise
     
     def register_strategy(self, name: str, strategy: BaseStrategy):
         """注册交易策略"""
         self.strategies[name] = strategy
-        logger.info(f"✅ 策略 '{name}' 已注册")
+        self.logger.info(f"✅ 策略 '{name}' 已注册")
     
     def run_analysis(self):
         """运行多时间框架分析"""
@@ -95,32 +96,38 @@ class MultiTimeframeProfessionalSystem:
             step_start = time.time()
             symbols = self._get_active_symbols()
             step_times['获取活跃交易对'] = time.time() - step_start
-            logger.info(f"🎯 已获取 {len(symbols)} 个活跃交易对")
+            self.logger.info(f"🎯 已获取 {len(symbols)} 个活跃交易对")
             
             # 步骤2: 筛选高流动性交易对
             step_start = time.time()
             filtered_symbols = self._filter_high_liquidity_symbols(symbols)
             step_times['筛选高流动性交易对'] = time.time() - step_start
-            logger.info(f"📊 筛选后剩余 {len(filtered_symbols)} 个高流动性交易对")
+            self.logger.info(f"📊 筛选后剩余 {len(filtered_symbols)} 个高流动性交易对")
             
             # 步骤3: 收集时间框架信息
             step_start = time.time()
             timeframes_info = self._collect_timeframes_info()
             step_times['收集时间框架信息'] = time.time() - step_start
-            logger.info(f"⏱️  收集了 {len(timeframes_info)} 个策略的时间框架信息")
+            self.logger.info(f"⏱️  收集了 {len(timeframes_info)} 个策略的时间框架信息")
             
             # 步骤4: 获取K线数据
             step_start = time.time()
             all_data = self._fetch_klines_data(filtered_symbols, timeframes_info)
             step_times['获取K线数据'] = time.time() - step_start
-            logger.info(f"📈 成功获取 {len(all_data)} 个交易对的K线数据")
+            self.logger.info(f"📈 成功获取 {len(all_data)} 个交易对的K线数据")
             
             # 步骤5: 策略分析
             step_start = time.time()
             all_opportunities = self._analyze_with_strategies(all_data)
             step_times['策略分析'] = time.time() - step_start
-            logger.info(f"🔍 分析完成，找到 {sum(len(ops) for ops in all_opportunities.values())} 个交易机会")
+            self.logger.info(f"🔍 分析完成，找到 {sum(len(ops) for ops in all_opportunities.values())} 个交易机会")
             
+            # 只打印最后两个交易机会（如果是字典，打印最后两个键值对）
+            if isinstance(all_opportunities, dict):
+                last_two = dict(list(all_opportunities.items())[-2:])
+                print(last_two)
+            else:
+                print(all_opportunities[-2:])
              # 步骤6: 生成报告和保存信号
             step_start = time.time()
             self._generate_reports(all_opportunities)
@@ -134,25 +141,26 @@ class MultiTimeframeProfessionalSystem:
                 strategy_instance = self.strategies[strategy_name]
                 filtered_opportunities[strategy_name] = strategy_instance.filter_trade_signals(opportunities)
             step_times['信号过滤'] = time.time() - step_start
-            logger.info(f"🧹 信号过滤完成，过滤后剩余 {sum(len(ops) for ops in filtered_opportunities.values())} 个交易信号")
+            self.logger.info(f"🧹 信号过滤完成，过滤后剩余 {sum(len(ops) for ops in filtered_opportunities.values())} 个交易信号")
             
             # 仓位过滤
-            # step_start = time.time()
-            # # 对过滤后的信号再进行仓位过滤
-            # for strategy_name, signals in filtered_opportunities.items():
-            #     strategy_instance = self.strategies[strategy_name]
-            #     filtered_opportunities[strategy_name] = strategy_instance.filter_by_positions(signals)
-            # step_times['仓位过滤'] = time.time() - step_start
-            # logger.info(f"📊 仓位过滤完成，过滤后剩余 {sum(len(ops) for ops in filtered_opportunities.values())} 个交易信号")
-            
+            step_start = time.time()
+            # 对过滤后的信号再进行仓位过滤
+            for strategy_name, signals in filtered_opportunities.items():
+                strategy_instance = self.strategies[strategy_name]
+                filtered_opportunities[strategy_name] = strategy_instance.filter_by_positions(signals)
+            step_times['仓位过滤'] = time.time() - step_start
+            self.logger.info(f"📊 仓位过滤完成，过滤后剩余 {sum(len(ops) for ops in filtered_opportunities.values())} 个交易信号")
+            self.logger.info(f"过滤后的交易信号示例: {next(iter(filtered_opportunities.values()))[:2]}")  # 只显示前2个信号，避免日志过长.
+
             # 保存交易信号
             step_start = time.time()
             for strategy_name, opportunities in filtered_opportunities.items():
                 # 获取策略实例并调用其保存交易信号的方法
                 strategy_instance = self.strategies[strategy_name]
-                strategy_instance._save_trade_signals(opportunities)
+                strategy_instance.save_trade_signals(opportunities)
             step_times['保存交易信号'] = time.time() - step_start
-            logger.info("📝 所有策略的交易信号已保存完成")
+            self.logger.info("📝 所有策略的交易信号已保存完成")
     
 
             
@@ -162,16 +170,16 @@ class MultiTimeframeProfessionalSystem:
             step_times['持仓分析'] = time.time() - step_start
             
             # 打印各步骤用时
-            logger.info("\n=== 各步骤用时分析 ===")
+            self.logger.info("\n=== 各步骤用时分析 ===")
             for step, duration in step_times.items():
-                logger.info(f"{step}: {duration:.2f}秒")
+                self.logger.info(f"{step}: {duration:.2f}秒")
             
             total_time = sum(step_times.values())
-            logger.info(f"总用时: {total_time:.2f}秒")
+            self.logger.info(f"总用时: {total_time:.2f}秒")
             
             return all_opportunities
         except Exception as e:
-            logger.error(f"❌ 分析过程中发生错误: {e}")
+            self.logger.error(f"❌ 分析过程中发生错误: {e}")
             raise
     
     def _get_active_symbols(self) -> List[str]:
@@ -194,7 +202,7 @@ class MultiTimeframeProfessionalSystem:
             
             return symbols
         except Exception as e:
-            logger.error(f"获取活跃交易对失败: {e}")
+            self.logger.error(f"获取活跃交易对失败: {e}")
             return []
     
     def _filter_high_liquidity_symbols(self, symbols: List[str]) -> List[str]:
@@ -223,7 +231,7 @@ class MultiTimeframeProfessionalSystem:
             
             return high_liquidity_symbols
         except Exception as e:
-            logger.error(f"筛选高流动性交易对失败: {e}")
+            self.logger.error(f"筛选高流动性交易对失败: {e}")
             return symbols  # 出错时返回所有交易对
     
     def _collect_timeframes_info(self) -> Dict[str, Dict[str, int]]:
@@ -234,7 +242,7 @@ class MultiTimeframeProfessionalSystem:
             if hasattr(strategy, 'get_required_timeframes'):
                 timeframes = strategy.get_required_timeframes()
                 timeframes_info[name] = timeframes
-                logger.info(f"策略 '{name}' 需要的时间框架: {timeframes}")
+                self.logger.info(f"策略 '{name}' 需要的时间框架: {timeframes}")
         
         return timeframes_info
     
@@ -258,7 +266,7 @@ class MultiTimeframeProfessionalSystem:
         for symbol in symbols:
             symbol_data = {}
             try:
-                logger.info(f"正在获取 {symbol} 的K线数据...")
+                self.logger.info(f"正在获取 {symbol} 的K线数据...")
                 
                 for tf in all_timeframes:
                     try:
@@ -283,10 +291,10 @@ class MultiTimeframeProfessionalSystem:
                             
                             symbol_data[tf] = df
                         else:
-                            logger.warning(f"未获取到 {symbol} 的 {tf} 数据")
+                            self.logger.warning(f"未获取到 {symbol} 的 {tf} 数据")
                             symbol_data[tf] = pd.DataFrame()
                     except Exception as e:
-                        logger.error(f"获取 {symbol} 的 {tf} 数据失败: {e}")
+                        self.logger.error(f"获取 {symbol} 的 {tf} 数据失败: {e}")
                         symbol_data[tf] = pd.DataFrame()
                 
                 # 检查是否有足够的数据
@@ -296,10 +304,10 @@ class MultiTimeframeProfessionalSystem:
                 if len(valid_timeframes) >= len(all_timeframes) / 2:
                     all_data[symbol] = symbol_data
                 else:
-                    logger.warning(f"{symbol} 的有效时间框架不足，跳过")
+                    self.logger.warning(f"{symbol} 的有效时间框架不足，跳过")
                     
             except Exception as e:
-                logger.error(f"处理 {symbol} 的数据时发生错误: {e}")
+                self.logger.error(f"处理 {symbol} 的数据时发生错误: {e}")
         
         return all_data
     
@@ -329,7 +337,7 @@ class MultiTimeframeProfessionalSystem:
                         
                         # 如果没有足够的时间框架数据，跳过该策略的分析
                         if not has_required_data:
-                            logger.info(f"跳过 {symbol} 的 {strategy_name} 分析：缺少必需的时间框架数据 - 缺少的周期: {missing_timeframes}")
+                            self.logger.info(f"跳过 {symbol} 的 {strategy_name} 分析：缺少必需的时间框架数据 - 缺少的周期: {missing_timeframes}")
                             continue
                         
                         # 提交分析任务
@@ -343,7 +351,7 @@ class MultiTimeframeProfessionalSystem:
                     if result is not None:
                         all_opportunities[strategy_name].append(result)
                 except Exception as e:
-                    logger.error(f"{strategy_name} 分析 {symbol} 时发生错误: {e}")
+                    self.logger.error(f"{strategy_name} 分析 {symbol} 时发生错误: {e}")
         
         return all_opportunities
     
@@ -351,7 +359,7 @@ class MultiTimeframeProfessionalSystem:
         """生成分析报告"""
         for strategy_name, opportunities in all_opportunities.items():
             if not opportunities:
-                logger.info(f"策略 '{strategy_name}' 未找到交易机会")
+                self.logger.info(f"策略 '{strategy_name}' 未找到交易机会")
                 continue
             
             # 按总分排序（买入信号降序，卖出信号降序）
@@ -359,14 +367,14 @@ class MultiTimeframeProfessionalSystem:
             try:
                 opportunities.sort(key=lambda x: getattr(x, 'total_score', 0), reverse=True)
             except Exception as e:
-                logger.error(f"排序交易机会时发生错误: {e}")
+                self.logger.error(f"排序交易机会时发生错误: {e}")
                 # 如果排序失败，继续执行，不中断流程
             
-            logger.info(f"📝 策略 '{strategy_name}' 找到 {len(opportunities)} 个交易机会")
+            self.logger.info(f"📝 策略 '{strategy_name}' 找到 {len(opportunities)} 个交易机会")
             
             # 打印前5个最佳交易机会
             if opportunities:
-                logger.info("\n🏆 TOP 5 交易机会：")
+                self.logger.info("\n🏆 TOP 5 交易机会：")
                 for i, opportunity in enumerate(opportunities[:5], 1):
                     # 尝试获取各种属性，如果不存在则使用默认值
                     symbol = getattr(opportunity, 'symbol', '未知')
@@ -374,20 +382,20 @@ class MultiTimeframeProfessionalSystem:
                     overall_action = getattr(opportunity, 'overall_action', '未知')
                     confidence_level = getattr(opportunity, 'confidence_level', '未知')
                     
-                    logger.info(f"{i}. {symbol} - 操作: {overall_action}, 评分: {total_score:.3f}, 信心: {confidence_level}")
+                    self.logger.info(f"{i}. {symbol} - 操作: {overall_action}, 评分: {total_score:.3f}, 信心: {confidence_level}")
             
             # 调用策略实例的方法保存交易信号
             strategy_instance = self.strategies[strategy_name]
-            strategy_instance._save_trade_signals(opportunities)
+            # strategy_instance._save_trade_signals(opportunities)
             
             # 调用策略的save_multi_timeframe_analysis方法生成多时间框架分析报告
             if strategy_instance and hasattr(strategy_instance, 'save_multi_timeframe_analysis'):
                 try:
                     file_path = strategy_instance.save_multi_timeframe_analysis(opportunities)
                     if file_path:
-                        logger.info(f"✅ 多时间框架分析报告已保存至: {file_path}")
+                        self.logger.info(f"✅ 多时间框架分析报告已保存至: {file_path}")
                 except Exception as e:
-                    logger.error(f"保存多时间框架分析报告时发生错误: {e}")
+                    self.logger.error(f"保存多时间框架分析报告时发生错误: {e}")
     
     def _analyze_and_report_positions(self, all_opportunities: Dict[str, List[Any]]):
         """分析当前持仓并报告需要关注的持仓"""
@@ -395,10 +403,10 @@ class MultiTimeframeProfessionalSystem:
             # 获取当前持仓
             current_positions = get_okx_positions(self.exchange)
             if not current_positions:
-                logger.info("📋 当前没有持仓")
+                self.logger.info("📋 当前没有持仓")
                 return
             
-            logger.info(f"📋 获取到 {len(current_positions)} 个当前持仓")
+            self.logger.info(f"📋 获取到 {len(current_positions)} 个当前持仓")
             
             # 收集所有交易机会到一个列表
             all_opportunities_list = []
@@ -423,13 +431,13 @@ class MultiTimeframeProfessionalSystem:
                             # 发送需要关注的持仓信息到API
                             for pos in positions_needing_attention:
                                 try:
-                                    send_position_info_to_api(pos, logger)
+                                    send_position_info_to_api(pos, self.logger)
                                 except Exception as e:
-                                    logger.error(f"发送持仓信息到API时发生错误: {e}")
+                                    self.logger.error(f"发送持仓信息到API时发生错误: {e}")
                     except Exception as e:
-                        logger.error(f"策略 '{strategy_name}' 分析持仓时发生错误: {e}")
+                        self.logger.error(f"策略 '{strategy_name}' 分析持仓时发生错误: {e}")
         except Exception as e:
-            logger.error(f"获取或分析持仓时发生错误: {e}")
+            self.logger.error(f"获取或分析持仓时发生错误: {e}")
 
 # 主函数入口
 if __name__ == "__main__":
@@ -438,11 +446,12 @@ if __name__ == "__main__":
         system = MultiTimeframeProfessionalSystem()
         
         # 运行分析
-        logger.info("🚀 开始多时间框架分析...")
+        system.logger.info("🚀 开始多时间框架分析...")
         all_opportunities = system.run_analysis()
         
-        logger.info("✅ 多时间框架分析完成!")
+        system.logger.info("✅ 多时间框架分析完成!")
     except Exception as e:
+        # 使用全局logger记录错误
         logger.error(f"❌ 系统运行失败: {e}")
         # 保留命令行，方便查看错误信息
         input("按Enter键退出...")

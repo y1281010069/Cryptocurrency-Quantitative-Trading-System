@@ -11,6 +11,7 @@ import os
 import redis
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+from lib2 import get_okx_positions  # 导入获取OKX仓位数据的函数
 from dataclasses import dataclass, field, make_dataclass
 import logging
 import sys
@@ -42,7 +43,7 @@ TRADING_CONFIG = {
         "USDC/USDT"
     ],
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
-    "MAX_POSITIONS": 30,
+    "MAX_POSITIONS": 31,
     "MECHANISM_ID": 14,
     "LOSS": 0.5,  # 损失参数，传递给API
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
@@ -55,9 +56,14 @@ TRADING_CONFIG = {
 
 # 配置日志记录器
 logger = logging.getLogger(__name__)
-# 使用从根记录器继承的配置，避免重复日志输出
-# 如果需要特定配置，可以在这里单独设置，但不要使用logging.basicConfig()
+# 设置日志级别
 logger.setLevel(logging.INFO)
+# 添加StreamHandler确保日志输出到控制台
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 # 导入项目模块
 from strategies.base_strategy import BaseStrategy
@@ -147,6 +153,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         
         super().__init__("MultiTimeframeStrategy", config)
         self._init_exchange()
+        self.logger = logging.getLogger(__name__)
 
     def analyze(self, symbol: str, data: Dict[str, pd.DataFrame]) -> Optional[MultiTimeframeSignal]:
         """
@@ -404,6 +411,104 @@ class MultiTimeframeStrategy(BaseStrategy):
         # 没有交易信号时返回None
         return None
         
+    def filter_by_positions(self, symbols: List[Any]) -> List[Any]:
+        self.logger.info(f"🔍 调用filter_by_positions方法，配置: {self.config}")
+        # 检查self.exchange是否存在
+        if not hasattr(self, 'exchange') or self.exchange is None:
+            self.logger.error("❌ self.exchange不存在或为None，无法获取仓位数据")
+            return symbols
+        
+        # 检查self.config是否存在
+        if not hasattr(self, 'config') or self.config is None:
+            self.logger.error("❌ self.config不存在或为None，无法获取配置")
+            # 设置默认配置
+            self.config = {'MAX_POSITIONS': 30}  # 使用策略中的默认值
+        
+        # 初始化trade_signals变量
+        trade_signals = symbols
+        
+        # 如果有交易信号，检查已持有的标的并过滤
+        if len(trade_signals) > 0:
+            try:
+                # 使用OKX接口获取当前仓位
+                self.logger.info("=== 开始获取OKX当前仓位数据 ===")
+                
+                # 记录获取仓位前的配置信息
+                max_positions = self.config.get('MAX_POSITIONS', 30)  # 使用策略中的默认值
+                self.logger.info(f"当前配置: MAX_POSITIONS={max_positions}")
+                
+                # 调用lib中的函数获取仓位数据
+                self.logger.info(f"调用get_okx_positions，传入的exchange对象: {type(self.exchange).__name__}")
+                formatted_positions = get_okx_positions(self.exchange)
+                self.logger.info(f"获取到的持仓数据数量: {len(formatted_positions)}")
+                if formatted_positions:
+                    self.logger.info(f"当前持仓数据示例: {formatted_positions[:2]}")  # 只显示前2个持仓，避免日志过长
+                
+                # 提取已持有的标的并标准化格式
+                held_symbols_converted = []
+                for position in formatted_positions:
+                    symbol = position.get('symbol', '')
+                    if symbol:
+                        # 标准化持仓标的格式
+                        # 1. 移除永续合约后缀（如'-SWAP'）
+                        # 2. 统一转换为大写
+                        standard_symbol = symbol.replace('-SWAP', '').upper()
+                        held_symbols_converted.append(standard_symbol)
+                
+                # 检查持仓数量是否超过最大限制
+                max_positions = self.config.get('MAX_POSITIONS', 30)  # 使用策略中的默认值
+                current_position_count = len(held_symbols_converted)
+                
+                # 记录持仓信息
+                self.logger.info(f"当前持仓数量: {current_position_count}, 持仓标的: {held_symbols_converted}")
+                
+                if current_position_count >= max_positions:
+                    # 如果已持仓数量超过最大限制，放弃所有交易信号
+                    self.logger.info(f"当前持仓数量({current_position_count})已达到或超过最大限制({max_positions})，放弃所有交易信号")
+                    trade_signals = []
+                else:
+                    # 过滤掉已持有的标的
+                    original_count = len(trade_signals)
+                    filtered_signals = []
+                    
+                    # 遍历所有交易信号，应用标准化匹配
+                    for signal in trade_signals:
+                        try:
+                            # 获取交易信号中的标的名称
+                            signal_symbol = getattr(signal, 'symbol', '')
+                            if not signal_symbol:
+                                continue
+                                
+                            # 标准化交易信号中的标的格式
+                            standard_signal_symbol = signal_symbol.replace('-SWAP', '').upper()
+                            
+                            # 检查是否匹配已持仓
+                            if standard_signal_symbol not in held_symbols_converted:
+                                filtered_signals.append(signal)
+                            else:
+                                self.logger.info(f"过滤掉已持仓标的: {signal_symbol} (标准化: {standard_signal_symbol})")
+                        except Exception as e:
+                            self.logger.error(f"处理交易信号时出错: {e}")
+                            # 出错时保留该信号，避免误过滤
+                            filtered_signals.append(signal)
+                    
+                    # 记录过滤信息
+                    filtered_count = original_count - len(filtered_signals)
+                    if filtered_count > 0:
+                        self.logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
+                    
+                    trade_signals = filtered_signals
+            except Exception as e:
+                    self.logger.error(f"❌ 获取OKX仓位数据时发生错误: {e}")
+                    import traceback
+                    self.logger.error(f"错误详情: {traceback.format_exc()}")
+                    # 即使获取仓位数据出错，也继续处理交易信号，不中断主流程
+        else:
+            self.logger.info("📭 没有接收到交易信号，跳过仓位过滤")
+        
+        self.logger.info(f"✅ filter_by_positions方法执行完成，返回的信号数量: {len(trade_signals)}")
+        return trade_signals
+        
     def analyze_positions(self, current_positions: List[Dict[str, Any]], opportunities: List[Any]) -> List[Dict[str, Any]]:
         # 修复括号不匹配问题，移除了多余的右括号
         positions_needing_attention = []
@@ -465,9 +570,9 @@ class MultiTimeframeStrategy(BaseStrategy):
                     # 只有持仓超过5小时才记录
                     if holding_hours >= 25:
                         positions_needing_attention.append({**position, 'reason': f'持仓时间超过5小时 ({round(holding_hours, 2)}小时)'})
-                        logger.info(f"记录持仓超过5小时的标的: {pos_symbol} (持仓时间: {round(holding_hours, 2)}小时)")
+                        self.logger.info(f"记录持仓超过5小时的标的: {pos_symbol} (持仓时间: {round(holding_hours, 2)}小时)")
                 except Exception as e:
-                    logger.error(f"计算持仓时间时发生错误: {e}")
+                    self.logger.error(f"计算持仓时间时发生错误: {e}")
         
         return positions_needing_attention
         

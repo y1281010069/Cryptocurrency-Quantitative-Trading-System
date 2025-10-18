@@ -14,6 +14,15 @@ from typing import Dict, List, Optional, Any
 import logging
 from lib2 import get_okx_positions, send_trading_signal_to_api
 
+# 配置日志
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
 
 class BaseStrategy(abc.ABC):
     """策略基类，定义所有策略必须实现的接口"""
@@ -28,6 +37,7 @@ class BaseStrategy(abc.ABC):
         self.strategy_name = strategy_name
         self.config = config or {}
         self.exchange = None  # 交易所连接对象
+        self.logger = logging.getLogger(__name__)
         
     @abc.abstractmethod
     def analyze(self, symbol: str, data: Dict[str, pd.DataFrame]) -> Any:
@@ -87,8 +97,7 @@ class BaseStrategy(abc.ABC):
                 raise AttributeError("子类必须定义OKX_CONFIG属性")
             
         except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ 交易所连接失败: {e}")
+            self.logger.error(f"❌ 交易所连接失败: {e}")
             raise
     
     @abc.abstractmethod
@@ -127,12 +136,8 @@ class BaseStrategy(abc.ABC):
         """
         import os
         import json
-        import logging
         from datetime import datetime
         from typing import List, Optional, Any
-        
-        # 配置日志
-        logger = logging.getLogger(__name__)
         
         # 筛选符合条件的交易信号
         trade_signals = []
@@ -181,7 +186,7 @@ class BaseStrategy(abc.ABC):
                     
                     f.write("\n" + "=" * 80 + "\n\n")
             
-            logger.info(f"已生成交易信号文件: {filename}")
+            self.logger.info(f"已生成交易信号文件: {filename}")
             return filename
         
         # 没有交易信号时返回None
@@ -196,8 +201,8 @@ class BaseStrategy(abc.ABC):
         """
         try:
             if not opportunities:
-                logger = logging.getLogger(__name__)
-                logger.info(f"策略 '{self.get_name()}' 没有交易信号需要保存")
+                self.logger = logging.getLogger(__name__)
+                self.logger.info(f"策略 '{self.get_name()}' 没有交易信号需要保存")
                 return
             
             # 确保输出目录存在
@@ -237,32 +242,8 @@ class BaseStrategy(abc.ABC):
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(signals_data, f, ensure_ascii=False, indent=2)
             
-            logger = logging.getLogger(__name__)
-            logger.info(f"✅ 策略 '{self.get_name()}' 的 {len(opportunities)} 个交易信号已保存至: {filepath}")
+            self.logger.info(f"✅ 策略 '{self.get_name()}' 的 {len(opportunities)} 个交易信号已保存至: {filepath}")
             
-            # 尝试连接Redis并保存信号
-            try:
-                # 检查是否有Redis配置
-                if hasattr(self, 'config') and isinstance(self.config, dict):
-                    redis_config = self.config.get('REDIS_CONFIG', None)
-                    if redis_config and isinstance(redis_config, dict):
-                        redis_client = redis.Redis(
-                            host=redis_config.get('host'),
-                            port=redis_config.get('port'),
-                            db=redis_config.get('db', 0),
-                            password=redis_config.get('password', None)
-                        )
-                        
-                        # 保存到Redis（键格式: strategy:signals:last）
-                        redis_key = f"strategy:{self.get_name()}:signals:last"
-                        redis_client.setex(
-                            redis_key,
-                            3600,  # 1小时过期
-                            json.dumps(signals_data, ensure_ascii=False)
-                        )
-                        logger.info(f"✅ 策略 '{self.get_name()}' 的交易信号已保存到Redis")
-            except Exception as redis_error:
-                logger.warning(f"⚠️  保存交易信号到Redis失败: {redis_error}")
             
             # 发送信号到API
             for signal_data in signals_data:
@@ -287,13 +268,12 @@ class BaseStrategy(abc.ABC):
                     signal_obj = SignalObject(signal_data)
                     send_trading_signal_to_api(signal_obj, logger)
                 except Exception as api_error:
-                    logger.warning(f"⚠️  发送交易信号到API失败: {api_error}")
+                    self.logger.warning(f"⚠️  发送交易信号到API失败: {api_error}")
                     
         except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ 保存交易信号时发生错误: {e}")
+            self.logger.error(f"❌ 保存交易信号时发生错误: {e}")
             import traceback
-            logger.error(f"错误详情: {traceback.format_exc()}")
+            self.logger.error(f"错误详情: {traceback.format_exc()}")
         
     def save_positions_needing_attention(self, positions: List[Dict[str, Any]]) -> str:
         """保存需要关注的持仓信息
@@ -305,11 +285,7 @@ class BaseStrategy(abc.ABC):
             生成的文件路径
         """
         import os
-        import logging
         from datetime import datetime
-        
-        # 配置日志
-        logger = logging.getLogger(__name__)
         
         # 创建需要关注的持仓目录
         attention_dir = "reports/positions_needing_attention"
@@ -339,7 +315,7 @@ class BaseStrategy(abc.ABC):
                 f.write(f"关注原因: {pos.get('reason', '未知')}\n")
                 f.write("\n" + "=" * 80 + "\n\n")
         
-        logger.info(f"已生成需要关注的持仓记录: {filename}")
+        self.logger.info(f"已生成需要关注的持仓记录: {filename}")
         return filename
         
     def filter_by_positions(self, trade_signals: List[Any]) -> List[Any]:
@@ -351,21 +327,19 @@ class BaseStrategy(abc.ABC):
         返回:
             过滤后的交易信号列表
         """
-        import logging
-        
-        logger = logging.getLogger(__name__)
+
         
         # 增加日志记录，确认方法被调用
-        logger.info(f"🔍 filter_by_positions方法被调用，接收到的信号数量: {len(trade_signals)}")
+        self.logger.info(f"🔍 filter_by_positions方法被调用，接收到的信号数量: {len(trade_signals)}")
         
         # 检查self.exchange是否存在
         if not hasattr(self, 'exchange') or self.exchange is None:
-            logger.error("❌ self.exchange不存在或为None，无法获取仓位数据")
+            self.logger.error("❌ self.exchange不存在或为None，无法获取仓位数据")
             return trade_signals
         
         # 检查self.config是否存在
         if not hasattr(self, 'config') or self.config is None:
-            logger.error("❌ self.config不存在或为None，无法获取配置")
+            self.logger.error("❌ self.config不存在或为None，无法获取配置")
             # 设置默认配置
             self.config = {'MAX_POSITIONS': 10}
         
@@ -373,18 +347,18 @@ class BaseStrategy(abc.ABC):
         if len(trade_signals) > 0:
             try:
                 # 使用OKX接口获取当前仓位
-                logger.info("=== 开始获取OKX当前仓位数据 ===")
+                self.logger.info("=== 开始获取OKX当前仓位数据 ===")
                 
                 # 记录获取仓位前的配置信息
                 max_positions = self.config.get('MAX_POSITIONS', 10)
-                logger.info(f"当前配置: MAX_POSITIONS={max_positions}")
+                self.logger.info(f"当前配置: MAX_POSITIONS={max_positions}")
                 
                 # 调用lib中的函数获取仓位数据
-                logger.info(f"调用get_okx_positions，传入的exchange对象: {type(self.exchange).__name__}")
+                self.logger.info(f"调用get_okx_positions，传入的exchange对象: {type(self.exchange).__name__}")
                 formatted_positions = get_okx_positions(self.exchange)
-                logger.info(f"获取到的持仓数据数量: {len(formatted_positions)}")
+                self.logger.info(f"获取到的持仓数据数量: {len(formatted_positions)}")
                 if formatted_positions:
-                    logger.info(f"当前持仓数据示例: {formatted_positions[:2]}")  # 只显示前2个持仓，避免日志过长
+                    self.logger.info(f"当前持仓数据示例: {formatted_positions[:2]}")  # 只显示前2个持仓，避免日志过长
                 
                 # 提取已持有的标的并标准化格式
                 held_symbols_converted = []
@@ -402,11 +376,11 @@ class BaseStrategy(abc.ABC):
                 current_position_count = len(held_symbols_converted)
                 
                 # 记录持仓信息
-                logger.info(f"当前持仓数量: {current_position_count}, 持仓标的: {held_symbols_converted}")
+                self.logger.info(f"当前持仓数量: {current_position_count}, 持仓标的: {held_symbols_converted}")
                 
                 if current_position_count >= max_positions:
                     # 如果已持仓数量超过最大限制，放弃所有交易信号
-                    logger.info(f"当前持仓数量({current_position_count})已达到或超过最大限制({max_positions})，放弃所有交易信号")
+                    self.logger.info(f"当前持仓数量({current_position_count})已达到或超过最大限制({max_positions})，放弃所有交易信号")
                     trade_signals = []
                 else:
                     # 过滤掉已持有的标的
@@ -428,27 +402,27 @@ class BaseStrategy(abc.ABC):
                             if standard_signal_symbol not in held_symbols_converted:
                                 filtered_signals.append(signal)
                             else:
-                                logger.info(f"过滤掉已持仓标的: {signal_symbol} (标准化: {standard_signal_symbol})")
+                                self.logger.info(f"过滤掉已持仓标的: {signal_symbol} (标准化: {standard_signal_symbol})")
                         except Exception as e:
-                            logger.error(f"处理交易信号时出错: {e}")
+                            self.logger.error(f"处理交易信号时出错: {e}")
                             # 出错时保留该信号，避免误过滤
                             filtered_signals.append(signal)
                     
                     # 记录过滤信息
                     filtered_count = original_count - len(filtered_signals)
                     if filtered_count > 0:
-                        logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
+                        self.logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
                     
                     trade_signals = filtered_signals
             except Exception as e:
-                    logger.error(f"❌ 获取OKX仓位数据时发生错误: {e}")
+                    self.logger.error(f"❌ 获取OKX仓位数据时发生错误: {e}")
                     import traceback
-                    logger.error(f"错误详情: {traceback.format_exc()}")
+                    self.logger.error(f"错误详情: {traceback.format_exc()}")
                     # 即使获取仓位数据出错，也继续处理交易信号，不中断主流程
         else:
-            logger.info("📭 没有接收到交易信号，跳过仓位过滤")
+            self.logger.info("📭 没有接收到交易信号，跳过仓位过滤")
         
-        logger.info(f"✅ filter_by_positions方法执行完成，返回的信号数量: {len(trade_signals)}")
+        self.logger.info(f"✅ filter_by_positions方法执行完成，返回的信号数量: {len(trade_signals)}")
         return trade_signals
 
     def filter_trade_signals(self, opportunities: List[Any]) -> List[Any]:
@@ -460,8 +434,7 @@ class BaseStrategy(abc.ABC):
         返回:
             过滤后的交易信号列表
         """
-        import logging
-        logger = logging.getLogger(__name__)
+
         trade_signals = []
         
         for op in opportunities:
@@ -480,7 +453,7 @@ class BaseStrategy(abc.ABC):
                         has_sell_signal = any("卖出" in signal for signal in op.timeframe_signals.values())
                     
                     if has_sell_signal:
-                        logger.info(f"{op.symbol} 买入信号因任一周期有卖出信号而被过滤掉")
+                        self.logger.info(f"{op.symbol} 买入信号因任一周期有卖出信号而被过滤掉")
                         continue
                     
                     # 应用交易信号触发周期过滤
@@ -501,9 +474,9 @@ class BaseStrategy(abc.ABC):
                             if price_diff_percent >= 0.3 and price_diff_percent <= 10:
                                 trade_signals.append(op)
                             elif price_diff_percent < 0.3:
-                                logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
+                                self.logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
                             else:
-                                logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
+                                self.logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
                         else:
                             trade_signals.append(op)
                 else:
@@ -522,7 +495,7 @@ class BaseStrategy(abc.ABC):
                   
                       
                     if has_buy_signal:
-                        logger.info(f"{op.symbol} 卖出信号因任一周期有买入信号而被过滤掉")
+                        self.logger.info(f"{op.symbol} 卖出信号因任一周期有买入信号而被过滤掉")
                         continue
                     
                     # 应用交易信号触发周期过滤
@@ -543,9 +516,9 @@ class BaseStrategy(abc.ABC):
                             if price_diff_percent >= 0.3 and price_diff_percent <= 10:
                                 trade_signals.append(op)
                             elif price_diff_percent < 0.3:
-                                logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
+                                self.logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
                             else:
-                                logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
+                                self.logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
                         else:
                             trade_signals.append(op)
                 else:
@@ -569,21 +542,21 @@ class BaseStrategy(abc.ABC):
         from typing import List, Optional, Any
         
         # 配置日志
-        logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)
         
         # 保留所有交易机会，不进行过滤
         all_opportunities = opportunities
         
         # 如果没有交易机会，不生成报告
         if not all_opportunities:
-            logger.info("没有交易机会，不生成多时间框架分析报告")
+            self.logger.info("没有交易机会，不生成多时间框架分析报告")
             return None
         
         # 按照分数的绝对值倒序排序
         try:
             all_opportunities.sort(key=lambda x: abs(getattr(x, 'total_score', 0)), reverse=True)
         except Exception as e:
-            logger.error(f"排序交易机会时发生错误: {e}")
+            self.logger.error(f"排序交易机会时发生错误: {e}")
         
         # 设置报告目录路径
         report_dir = "reports"
@@ -655,5 +628,5 @@ class BaseStrategy(abc.ABC):
                 f.write(f"分析依据: {reasoning_text}\n")
                 f.write("\n" + "=" * 80 + "\n\n")
         
-        logger.info(f"✅ 多时间框架分析报告已保存至: {filename}")
+        self.logger.info(f"✅ 多时间框架分析报告已保存至: {filename}")
         return filename

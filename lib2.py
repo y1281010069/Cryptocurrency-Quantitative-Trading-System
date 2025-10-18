@@ -1,4 +1,3 @@
-import numpy as np
 import logging
 import requests
 import numpy as np
@@ -19,18 +18,15 @@ except ImportError:
         'PASSWORD': None
     }
 
-# 配置日志
+# 配置日志（只保留一套配置）
 logger = logging.getLogger(__name__)
-
-# 尝试导入配置文件，如果不存在则使用默认值
-try:
-    from config import TRADING_CONFIG
-except ImportError:
-    # 使用默认配置
-    TRADING_CONFIG = {
-        'ATR_PERIOD': 14
-    }
-
+# 检查logger是否已有handler，如果没有则添加
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 def calculate_atr(df, period=None):
     # 如果没有提供period参数，使用配置中的值
     if period is None:
@@ -102,13 +98,13 @@ def get_okx_positions(exchange, use_contract_utils=False):
             
             # 计算当前价格（使用最新市场数据）
             current_price = 0
-            if symbol in exchange.markets:
-                try:
-                    ticker = exchange.fetch_ticker(symbol)
-                    current_price = ticker.get('last', 0)
-                except Exception as e:
-                    logger.warning(f"获取{symbol}当前价格失败: {e}")
-                    current_price = 0
+            # if symbol in exchange.markets:
+            #     try:
+            #         ticker = exchange.fetch_ticker(symbol)
+            #         current_price = ticker.get('last', 0)
+            #     except Exception as e:
+            #         logger.warning(f"获取{symbol}当前价格失败: {e}")
+            #         current_price = 0
             
             # 计算盈亏百分比
             entry_price = float(position.get('entryPrice', 0))
@@ -200,11 +196,11 @@ def send_trading_signal_to_api(signal, name, logger_param=None, LOSS=None):
         bool: 是否成功发送信号
     """
     # 使用提供的logger或默认logger
-    log = logger_param if logger_param is not None else logger
+    logger_used = logger_param if logger_param is not None else logger
     
     # 检查是否启用信号API
     if not TRADING_CONFIG.get('ENABLE_SIGNAL_API', False):
-        log.info(f"信号API未启用，跳过发送交易信号: {signal.symbol} ({signal.overall_action})")
+        logger_used.info(f"信号API未启用，跳过发送交易信号: {signal.symbol} ({signal.overall_action})")
         return False
     
     try:
@@ -230,14 +226,14 @@ def send_trading_signal_to_api(signal, name, logger_param=None, LOSS=None):
         
         # 记录请求结果
         if response.status_code == 200:
-            log.info(f"成功发送交易信号到API: {signal.symbol} ({signal.overall_action})")
+            logger_used.info(f"成功发送交易信号到API: {signal.symbol} ({signal.overall_action})")
             return True
         else:
-            log.warning(f"发送交易信号到API失败 (状态码: {response.status_code}): {signal.symbol}")
-            log.debug(f"API响应: {response.text}")
+            logger_used.warning(f"发送交易信号到API失败 (状态码: {response.status_code}): {signal.symbol}")
+            logger_used.info(f"API响应: {response.text}")  # 将debug改为info以确保日志可见
             return False
     except Exception as e:
-        log.error(f"发送交易信号到API时发生异常: {e}")
+        logger_used.error(f"发送交易信号到API时发生异常: {e}")
         return False
 
 def send_position_info_to_api(position, name, logger_param=None):
@@ -252,7 +248,7 @@ def send_position_info_to_api(position, name, logger_param=None):
         bool: 是否成功发送持仓信息
     """
     # 使用提供的logger或默认logger
-    log = logger_param if logger_param is not None else logger
+    logger_used = logger_param if logger_param is not None else logger
     
     try:
         # 设置ac_type参数：多头对应c_l，空头对应c_s
@@ -270,24 +266,24 @@ def send_position_info_to_api(position, name, logger_param=None):
         url = 'http://149.129.66.131:81/myOrder'
         
         # 打印接口请求信息
-        log.info(f"发送请求到接口: {url}")
-        log.info(f"请求参数: {payload}")
+        logger_used.info(f"发送请求到接口: {url}")
+        logger_used.info(f"请求参数: {payload}")
         
         # 发送请求
         response = requests.post(url, data=payload, timeout=10)
         
         # 打印接口返回信息
-        log.info(f"接口返回状态码: {response.status_code}")
-        log.info(f"接口返回内容: {response.text}")
+        logger_used.info(f"接口返回状态码: {response.status_code}")
+        logger_used.info(f"接口返回内容: {response.text}")
         
         # 记录请求结果
         if response.status_code == 200:
-            log.info(f"成功发送持仓信息到API: {position['symbol']} ({position['direction']})")
+            logger_used.info(f"成功发送持仓信息到API: {position['symbol']} ({position['direction']})")
             return True
         else:
-            log.warning(f"发送持仓信息到API失败 (状态码: {response.status_code}): {position['symbol']}")
-            log.debug(f"API响应: {response.text}")
+            logger_used.warning(f"发送持仓信息到API失败 (状态码: {response.status_code}): {position['symbol']}")
+            logger_used.info(f"API响应: {response.text}")  # 将debug改为info以确保日志可见
             return False
     except Exception as e:
-        log.error(f"发送持仓信息到API时发生异常: {e}")
+        logger_used.error(f"发送持仓信息到API时发生异常: {e}")
         return False
