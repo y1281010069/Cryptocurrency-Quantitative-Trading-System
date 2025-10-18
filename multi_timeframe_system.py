@@ -136,9 +136,7 @@ class MultiTimeframeProfessionalSystem:
             step_times['信号过滤'] = time.time() - step_start
             logger.info(f"🧹 信号过滤完成，过滤后剩余 {sum(len(ops) for ops in filtered_opportunities.values())} 个交易信号")
             
-
-        
-            # # 仓位过滤
+            # 仓位过滤
             # step_start = time.time()
             # # 对过滤后的信号再进行仓位过滤
             # for strategy_name, signals in filtered_opportunities.items():
@@ -157,13 +155,11 @@ class MultiTimeframeProfessionalSystem:
             logger.info("📝 所有策略的交易信号已保存完成")
     
 
-
-            #发送交易
             
             # # 步骤7: 持仓分析
-            # step_start = time.time()
-            # self._analyze_and_report_positions(filtered_opportunities)
-            # step_times['持仓分析'] = time.time() - step_start
+            step_start = time.time()
+            self._analyze_and_report_positions(filtered_opportunities)
+            step_times['持仓分析'] = time.time() - step_start
             
             # 打印各步骤用时
             logger.info("\n=== 各步骤用时分析 ===")

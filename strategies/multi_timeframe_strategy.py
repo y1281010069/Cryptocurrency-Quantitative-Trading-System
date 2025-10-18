@@ -420,16 +420,38 @@ class MultiTimeframeStrategy(BaseStrategy):
             else:
                 base_symbol = pos_symbol
             
+            # 标准化标的名称以提高匹配成功率
+            # 转换为大写并去除可能的空格
+            normalized_symbol = base_symbol.strip().upper()
+            
             # 检查多头仓位
             if position.get('posSide') == 'long':
-                # 查找是否有策略建议卖出
-                related_opportunity = next((opp for opp in opportunities if hasattr(opp, 'symbol') and opp.symbol == base_symbol), None)
+                # 查找是否有策略建议卖出 - 使用更健壮的匹配方式
+                related_opportunity = None
+                for opp in opportunities:
+                    if hasattr(opp, 'symbol'):
+                        # 对机会中的标的也进行标准化处理
+                        opp_symbol = getattr(opp, 'symbol', '').strip().upper()
+                        # 尝试完全匹配或部分匹配
+                        if normalized_symbol == opp_symbol or normalized_symbol.replace('/', '') == opp_symbol.replace('/', ''):
+                            related_opportunity = opp
+                            break
+                            
                 if related_opportunity and hasattr(related_opportunity, 'overall_action') and related_opportunity.overall_action == "卖出":
                     positions_needing_attention.append({**position, 'reason': f'{self.get_name()}策略建议平仓'})
             # 检查空头仓位
             elif position.get('posSide') == 'short':
-                # 查找是否有策略建议买入
-                related_opportunity = next((opp for opp in opportunities if hasattr(opp, 'symbol') and opp.symbol == base_symbol), None)
+                # 查找是否有策略建议买入 - 使用更健壮的匹配方式
+                related_opportunity = None
+                for opp in opportunities:
+                    if hasattr(opp, 'symbol'):
+                        # 对机会中的标的也进行标准化处理
+                        opp_symbol = getattr(opp, 'symbol', '').strip().upper()
+                        # 尝试完全匹配或部分匹配（去除斜杠等特殊字符后）
+                        if normalized_symbol == opp_symbol or normalized_symbol.replace('/', '') == opp_symbol.replace('/', ''):
+                            related_opportunity = opp
+                            break
+                            
                 if related_opportunity and hasattr(related_opportunity, 'overall_action') and related_opportunity.overall_action == "买入":
                     positions_needing_attention.append({**position, 'reason': f'{self.get_name()}策略建议平仓'})
             
@@ -441,7 +463,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                     holding_hours = (datetime.now() - entry_time).total_seconds() / 3600
                     
                     # 只有持仓超过5小时才记录
-                    if holding_hours >= 5:
+                    if holding_hours >= 25:
                         positions_needing_attention.append({**position, 'reason': f'持仓时间超过5小时 ({round(holding_hours, 2)}小时)'})
                         logger.info(f"记录持仓超过5小时的标的: {pos_symbol} (持仓时间: {round(holding_hours, 2)}小时)")
                 except Exception as e:
