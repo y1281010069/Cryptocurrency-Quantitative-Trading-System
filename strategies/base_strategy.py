@@ -268,12 +268,20 @@ class BaseStrategy(abc.ABC):
             for signal_data in signals_data:
                 try:
                     # 注意：lib2.py中的函数期望的第一个参数是具有属性的对象，而不是字典
-                    # 创建一个具有所需属性的简单对象
+                    # 创建一个具有所需属性的简单对象，并确保包含所有必需的属性
                     class SignalObject:
                         def __init__(self, data):
                             # 将字典的键值对转换为对象属性
                             for key, value in data.items():
                                 setattr(self, key, value)
+                            
+                            # 确保包含lib2.py中所需的所有属性，设置默认值避免AttributeError
+                            required_attrs = ['symbol', 'overall_action', 'target_short', 'stop_loss']
+                            for attr in required_attrs:
+                                if not hasattr(self, attr):
+                                    # 为缺失的属性设置默认值
+                                    default_value = '' if attr in ['symbol', 'overall_action'] else 0.0
+                                    setattr(self, attr, default_value)
                     
                     # 将字典转换为对象
                     signal_obj = SignalObject(signal_data)
