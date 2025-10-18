@@ -5,10 +5,14 @@
 """
 
 import abc
+import json
+import os
+import redis
 import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import logging
+from lib2 import get_okx_positions, send_trading_signal_to_api
 
 
 class BaseStrategy(abc.ABC):
@@ -183,6 +187,106 @@ class BaseStrategy(abc.ABC):
         # 没有交易信号时返回None
         return None
         
+    def _save_trade_signals(self, opportunities: List[Any]):
+        print("调用_save_trade_signals")
+        """保存交易信号到文件和Redis
+     
+        参数:
+            opportunities: 交易机会列表
+        """
+        try:
+            if not opportunities:
+                logger = logging.getLogger(__name__)
+                logger.info(f"策略 '{self.get_name()}' 没有交易信号需要保存")
+                return
+            
+            # 确保输出目录存在
+            signals_dir = os.path.join("reports", "signals")
+            os.makedirs(signals_dir, exist_ok=True)
+            
+            # 创建信号数据列表
+            signals_data = []
+            for opportunity in opportunities:
+                signal_data = {
+                    'symbol': getattr(opportunity, 'symbol', '未知'),
+                    'timestamp': datetime.now().isoformat(),
+                    'strategy': self.get_name(),
+                    'overall_action': getattr(opportunity, 'overall_action', '未知'),
+                    'confidence_level': getattr(opportunity, 'confidence_level', '未知'),
+                    'total_score': getattr(opportunity, 'total_score', 0),
+                    'entry_price': getattr(opportunity, 'entry_price', 0),
+                    'stop_loss': getattr(opportunity, 'stop_loss', 0),
+                    'take_profit': getattr(opportunity, 'take_profit', 0),
+                    'timeframe_scores': {}
+                }
+                
+                # 添加各时间框架的信号和分数（如果有）
+                if hasattr(opportunity, 'timeframe_signals'):
+                    for tf, signal in opportunity.timeframe_signals.items():
+                        signal_data['timeframe_scores'][tf] = {
+                            'signal': getattr(signal, 'signal', 0),
+                            'score': getattr(signal, 'score', 0),
+                            'action': getattr(signal, 'action', 'unknown')
+                        }
+                
+                signals_data.append(signal_data)
+            
+            # 保存到JSON文件
+            filename = f"{self.get_name()}_signals_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            filepath = os.path.join(signals_dir, filename)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(signals_data, f, ensure_ascii=False, indent=2)
+            
+            logger = logging.getLogger(__name__)
+            logger.info(f"✅ 策略 '{self.get_name()}' 的 {len(opportunities)} 个交易信号已保存至: {filepath}")
+            
+            # 尝试连接Redis并保存信号
+            try:
+                # 检查是否有Redis配置
+                if hasattr(self, 'config') and isinstance(self.config, dict):
+                    redis_config = self.config.get('REDIS_CONFIG', None)
+                    if redis_config and isinstance(redis_config, dict):
+                        redis_client = redis.Redis(
+                            host=redis_config.get('host'),
+                            port=redis_config.get('port'),
+                            db=redis_config.get('db', 0),
+                            password=redis_config.get('password', None)
+                        )
+                        
+                        # 保存到Redis（键格式: strategy:signals:last）
+                        redis_key = f"strategy:{self.get_name()}:signals:last"
+                        redis_client.setex(
+                            redis_key,
+                            3600,  # 1小时过期
+                            json.dumps(signals_data, ensure_ascii=False)
+                        )
+                        logger.info(f"✅ 策略 '{self.get_name()}' 的交易信号已保存到Redis")
+            except Exception as redis_error:
+                logger.warning(f"⚠️  保存交易信号到Redis失败: {redis_error}")
+            
+            # 发送信号到API
+            for signal_data in signals_data:
+                try:
+                    # 注意：lib2.py中的函数期望的第一个参数是具有属性的对象，而不是字典
+                    # 创建一个具有所需属性的简单对象
+                    class SignalObject:
+                        def __init__(self, data):
+                            # 将字典的键值对转换为对象属性
+                            for key, value in data.items():
+                                setattr(self, key, value)
+                    
+                    # 将字典转换为对象
+                    signal_obj = SignalObject(signal_data)
+                    send_trading_signal_to_api(signal_obj, logger)
+                except Exception as api_error:
+                    logger.warning(f"⚠️  发送交易信号到API失败: {api_error}")
+                    
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ 保存交易信号时发生错误: {e}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
+        
     def save_positions_needing_attention(self, positions: List[Dict[str, Any]]) -> str:
         """保存需要关注的持仓信息
         
@@ -230,6 +334,218 @@ class BaseStrategy(abc.ABC):
         logger.info(f"已生成需要关注的持仓记录: {filename}")
         return filename
         
+    def filter_by_positions(self, trade_signals: List[Any]) -> List[Any]:
+        """根据已持仓情况过滤交易信号
+        
+        参数:
+            trade_signals: 交易信号列表
+        
+        返回:
+            过滤后的交易信号列表
+        """
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # 增加日志记录，确认方法被调用
+        logger.info(f"🔍 filter_by_positions方法被调用，接收到的信号数量: {len(trade_signals)}")
+        
+        # 检查self.exchange是否存在
+        if not hasattr(self, 'exchange') or self.exchange is None:
+            logger.error("❌ self.exchange不存在或为None，无法获取仓位数据")
+            return trade_signals
+        
+        # 检查self.config是否存在
+        if not hasattr(self, 'config') or self.config is None:
+            logger.error("❌ self.config不存在或为None，无法获取配置")
+            # 设置默认配置
+            self.config = {'MAX_POSITIONS': 10}
+        
+        # 如果有交易信号，检查已持有的标的并过滤
+        if len(trade_signals) > 0:
+            try:
+                # 使用OKX接口获取当前仓位
+                logger.info("=== 开始获取OKX当前仓位数据 ===")
+                
+                # 记录获取仓位前的配置信息
+                max_positions = self.config.get('MAX_POSITIONS', 10)
+                logger.info(f"当前配置: MAX_POSITIONS={max_positions}")
+                
+                # 调用lib中的函数获取仓位数据
+                logger.info(f"调用get_okx_positions，传入的exchange对象: {type(self.exchange).__name__}")
+                formatted_positions = get_okx_positions(self.exchange)
+                logger.info(f"获取到的持仓数据数量: {len(formatted_positions)}")
+                if formatted_positions:
+                    logger.info(f"当前持仓数据示例: {formatted_positions[:2]}")  # 只显示前2个持仓，避免日志过长
+                
+                # 提取已持有的标的并标准化格式
+                held_symbols_converted = []
+                for position in formatted_positions:
+                    symbol = position.get('symbol', '')
+                    if symbol:
+                        # 标准化持仓标的格式
+                        # 1. 移除永续合约后缀（如'-SWAP'）
+                        # 2. 统一转换为大写
+                        standard_symbol = symbol.replace('-SWAP', '').upper()
+                        held_symbols_converted.append(standard_symbol)
+                
+                # 检查持仓数量是否超过最大限制
+                max_positions = self.config.get('MAX_POSITIONS', 10)
+                current_position_count = len(held_symbols_converted)
+                
+                # 记录持仓信息
+                logger.info(f"当前持仓数量: {current_position_count}, 持仓标的: {held_symbols_converted}")
+                
+                if current_position_count >= max_positions:
+                    # 如果已持仓数量超过最大限制，放弃所有交易信号
+                    logger.info(f"当前持仓数量({current_position_count})已达到或超过最大限制({max_positions})，放弃所有交易信号")
+                    trade_signals = []
+                else:
+                    # 过滤掉已持有的标的
+                    original_count = len(trade_signals)
+                    filtered_signals = []
+                    
+                    # 遍历所有交易信号，应用标准化匹配
+                    for signal in trade_signals:
+                        try:
+                            # 获取交易信号中的标的名称
+                            signal_symbol = getattr(signal, 'symbol', '')
+                            if not signal_symbol:
+                                continue
+                                
+                            # 标准化交易信号中的标的格式
+                            standard_signal_symbol = signal_symbol.replace('-SWAP', '').upper()
+                            
+                            # 检查是否匹配已持仓
+                            if standard_signal_symbol not in held_symbols_converted:
+                                filtered_signals.append(signal)
+                            else:
+                                logger.info(f"过滤掉已持仓标的: {signal_symbol} (标准化: {standard_signal_symbol})")
+                        except Exception as e:
+                            logger.error(f"处理交易信号时出错: {e}")
+                            # 出错时保留该信号，避免误过滤
+                            filtered_signals.append(signal)
+                    
+                    # 记录过滤信息
+                    filtered_count = original_count - len(filtered_signals)
+                    if filtered_count > 0:
+                        logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
+                    
+                    trade_signals = filtered_signals
+            except Exception as e:
+                    logger.error(f"❌ 获取OKX仓位数据时发生错误: {e}")
+                    import traceback
+                    logger.error(f"错误详情: {traceback.format_exc()}")
+                    # 即使获取仓位数据出错，也继续处理交易信号，不中断主流程
+        else:
+            logger.info("📭 没有接收到交易信号，跳过仓位过滤")
+        
+        logger.info(f"✅ filter_by_positions方法执行完成，返回的信号数量: {len(trade_signals)}")
+        return trade_signals
+
+    def filter_trade_signals(self, opportunities: List[Any]) -> List[Any]:
+        """过滤交易信号，根据配置的阈值和规则筛选符合条件的信号
+        
+        参数:
+            opportunities: 交易机会列表，支持不同类型的信号对象
+        
+        返回:
+            过滤后的交易信号列表
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        trade_signals = []
+        
+        for op in opportunities:
+            # 检查信号对象是否具有基本必要属性
+            if not (hasattr(op, 'symbol') and hasattr(op, 'overall_action')):
+                continue
+            
+            # 检查是否是买入信号
+            if hasattr(op, 'total_score') and op.total_score >= self.config.get('BUY_THRESHOLD') and op.overall_action == "买入":
+                # 如果是MultiTimeframeSignal类型，应用特定的过滤规则
+                if 'MultiTimeframeSignal' in str(type(op)):
+                    # 检查任一周期是否有卖出信号
+                    has_sell_signal = False
+                    # 优先使用timeframe_signals字典检查所有配置的时间框架
+                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
+                        has_sell_signal = any("卖出" in signal for signal in op.timeframe_signals.values())
+                    
+                    if has_sell_signal:
+                        logger.info(f"{op.symbol} 买入信号因任一周期有卖出信号而被过滤掉")
+                        continue
+                    
+                    # 应用交易信号触发周期过滤
+                    signal_trigger_timeframe = self.config.get('SIGNAL_TRIGGER_TIMEFRAME', '15m')
+                    
+                    # 检查交易信号触发周期的条件
+                    # 优先使用timeframe_signals字典
+                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
+                        if signal_trigger_timeframe in op.timeframe_signals:
+                            if "买入" not in op.timeframe_signals[signal_trigger_timeframe]:
+                                continue
+                  
+                    
+                    # 符合交易信号触发周期的条件，继续处理
+                        # 添加止损价格过滤
+                        if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
+                            price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
+                            if price_diff_percent >= 0.3 and price_diff_percent <= 10:
+                                trade_signals.append(op)
+                            elif price_diff_percent < 0.3:
+                                logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
+                            else:
+                                logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
+                        else:
+                            trade_signals.append(op)
+                else:
+                    # 对于非MultiTimeframeSignal类型，应用通用过滤规则
+                    trade_signals.append(op)
+                          
+            # 检查是否是卖出信号
+            elif hasattr(op, 'total_score') and op.total_score <= self.config.get('SELL_THRESHOLD') and op.overall_action == "卖出":
+                # 如果是MultiTimeframeSignal类型，应用特定的过滤规则
+                if 'MultiTimeframeSignal' in str(type(op)):
+                    # 检查任一周期是否有买入信号
+                    has_buy_signal = False
+                    # 优先使用timeframe_signals字典检查所有配置的时间框架
+                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
+                        has_buy_signal = any("买入" in signal for signal in op.timeframe_signals.values())
+                  
+                      
+                    if has_buy_signal:
+                        logger.info(f"{op.symbol} 卖出信号因任一周期有买入信号而被过滤掉")
+                        continue
+                    
+                    # 应用交易信号触发周期过滤
+                    signal_trigger_timeframe = self.config.get('SIGNAL_TRIGGER_TIMEFRAME', '15m')
+                    
+                    # 检查交易信号触发周期的条件
+                    # 优先使用timeframe_signals字典
+                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
+                        if signal_trigger_timeframe in op.timeframe_signals:
+                            if "卖出" not in op.timeframe_signals[signal_trigger_timeframe]:
+                                continue
+                
+                    
+                    # 符合交易信号触发周期的条件，继续处理
+                        # 添加止损价格过滤
+                        if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
+                            price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
+                            if price_diff_percent >= 0.3 and price_diff_percent <= 10:
+                                trade_signals.append(op)
+                            elif price_diff_percent < 0.3:
+                                logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
+                            else:
+                                logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
+                        else:
+                            trade_signals.append(op)
+                else:
+                    # 对于非MultiTimeframeSignal类型，应用通用过滤规则
+                    trade_signals.append(op)
+        
+        return trade_signals
+
     def save_multi_timeframe_analysis(self, opportunities: List[Any]) -> Optional[str]:
         """生成多时间框架分析报告，格式符合report_viewer_python的解析要求
         

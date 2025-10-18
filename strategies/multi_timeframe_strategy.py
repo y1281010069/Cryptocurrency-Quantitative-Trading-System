@@ -42,9 +42,9 @@ TRADING_CONFIG = {
         "USDC/USDT"
     ],
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
-    "MAX_POSITIONS": 40,
+    "MAX_POSITIONS": 30,
     "MECHANISM_ID": 14,
-    "LOSS": 1,  # 损失参数，传递给API
+    "LOSS": 0.3,  # 损失参数，传递给API
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
     "TIMEFRAME_DATA_LENGTHS": {
         '4h': 168,   # 4小时
@@ -78,7 +78,6 @@ send_trading_signal_to_api = lib_module.send_trading_signal_to_api
 get_okx_positions = lib_module.get_okx_positions
 from okx.Account import AccountAPI
 from config import REDIS_CONFIG
-
 
 # 动态创建MultiTimeframeSignal类
 def create_multi_timeframe_signal_class():
@@ -148,8 +147,6 @@ class MultiTimeframeStrategy(BaseStrategy):
         
         super().__init__("MultiTimeframeStrategy", config)
         self._init_exchange()
-
-
 
     def analyze(self, symbol: str, data: Dict[str, pd.DataFrame]) -> Optional[MultiTimeframeSignal]:
         """
@@ -260,6 +257,8 @@ class MultiTimeframeStrategy(BaseStrategy):
             for timeframe in TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {}).keys():
                 timeframe_signals[timeframe] = signals.get(timeframe, '观望')
             
+            # 过滤信号应该移动到这里
+
             return MultiTimeframeSignal(
                 symbol=symbol,
                 weekly_trend="观望",  # 默认值，不再使用
@@ -351,148 +350,10 @@ class MultiTimeframeStrategy(BaseStrategy):
         # 筛选符合条件的交易信号
         trade_signals = []
         
-        for op in opportunities:
-            # 检查信号对象是否具有基本必要属性
-            if not (hasattr(op, 'symbol') and hasattr(op, 'overall_action')):
-                continue
-            
-            # 检查是否是买入信号
-            if hasattr(op, 'total_score') and op.total_score >= self.config.get('BUY_THRESHOLD') and op.overall_action == "买入":
-                # 如果是MultiTimeframeSignal类型，应用特定的过滤规则
-                if isinstance(op, MultiTimeframeSignal):
-                    # 检查任一周期是否有卖出信号
-                    has_sell_signal = False
-                    # 优先使用timeframe_signals字典检查所有配置的时间框架
-                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
-                        has_sell_signal = any("卖出" in signal for signal in op.timeframe_signals.values())
-                    
-                    if has_sell_signal:
-                        logger.info(f"{op.symbol} 买入信号因任一周期有卖出信号而被过滤掉")
-                        continue
-                    
-                    # 应用交易信号触发周期过滤
-                    signal_trigger_timeframe = self.config.get('SIGNAL_TRIGGER_TIMEFRAME', '15m')
-                    
-                    # 检查交易信号触发周期的条件
-                    # 优先使用timeframe_signals字典
-                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
-                        if signal_trigger_timeframe in op.timeframe_signals:
-                            if "买入" not in op.timeframe_signals[signal_trigger_timeframe]:
-                                continue
-                  
-                    
-                    # 符合交易信号触发周期的条件，继续处理
-                        # 添加止损价格过滤
-                        if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
-                            price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
-                            if price_diff_percent >= 0.3 and price_diff_percent <= 10:
-                                trade_signals.append(op)
-                            elif price_diff_percent < 0.3:
-                                logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
-                            else:
-                                logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
-                        else:
-                            trade_signals.append(op)
-                else:
-                    # 对于非MultiTimeframeSignal类型，应用通用过滤规则
-                    trade_signals.append(op)
-                         
-            # 检查是否是卖出信号
-            elif hasattr(op, 'total_score') and op.total_score <= self.config.get('SELL_THRESHOLD') and op.overall_action == "卖出":
-                # 如果是MultiTimeframeSignal类型，应用特定的过滤规则
-                if isinstance(op, MultiTimeframeSignal):
-                    # 检查任一周期是否有买入信号
-                    has_buy_signal = False
-                    # 优先使用timeframe_signals字典检查所有配置的时间框架
-                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
-                        has_buy_signal = any("买入" in signal for signal in op.timeframe_signals.values())
-                  
-                     
-                    if has_buy_signal:
-                        logger.info(f"{op.symbol} 卖出信号因任一周期有买入信号而被过滤掉")
-                        continue
-                    
-                    # 应用交易信号触发周期过滤
-                    signal_trigger_timeframe = self.config.get('SIGNAL_TRIGGER_TIMEFRAME', '15m')
-                    
-                    # 检查交易信号触发周期的条件
-                    # 优先使用timeframe_signals字典
-                    if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
-                        if signal_trigger_timeframe in op.timeframe_signals:
-                            if "卖出" not in op.timeframe_signals[signal_trigger_timeframe]:
-                                continue
-                
-                    
-                    # 符合交易信号触发周期的条件，继续处理
-                        # 添加止损价格过滤
-                        if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
-                            price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
-                            if price_diff_percent >= 0.3 and price_diff_percent <= 10:
-                                trade_signals.append(op)
-                            elif price_diff_percent < 0.3:
-                                logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
-                            else:
-                                logger.info(f"{op.symbol} 卖出信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
-                        else:
-                            trade_signals.append(op)
-                else:
-                    # 对于非MultiTimeframeSignal类型，应用通用过滤规则
-                    trade_signals.append(op)
+        # 使用基类的filter_trade_signals方法进行信号过滤
+        trade_signals = self.filter_trade_signals(opportunities)
         
-        # 如果有交易信号，检查已持有的标的并过滤
-        if len(trade_signals) > 0:
-            try:
-                # 使用OKX接口获取当前仓位
-                print("=== 开始获取OKX当前仓位数据 ===")
-                
-                # 创建OKX AccountAPI实例
-                try:
-                    account_api = AccountAPI(
-                        api_key=OKX_CONFIG['api_key'],
-                        api_secret_key=OKX_CONFIG['secret'],
-                        passphrase=OKX_CONFIG['passphrase'],
-                        use_server_time=True,
-                        flag='1' if OKX_CONFIG['sandbox'] else '0',  # 1=测试环境, 0=正式环境
-                        debug=False
-                    )
-                    
-                    # 调用lib中的函数获取仓位数据
-                    formatted_positions = get_okx_positions(self.exchange)
-                    print(formatted_positions)
-                    
-                    # 提取已持有的标的（格式：KAITO/USDT）
-                    held_symbols_converted = []
-                    for position in formatted_positions:
-                        symbol = position.get('symbol', '')
-                        if symbol:
-                            held_symbols_converted.append(symbol)
-                    
-                    # 检查持仓数量是否超过最大限制
-                    max_positions = self.config.get('MAX_POSITIONS', 10)
-                    current_position_count = len(held_symbols_converted)
-                    
-                    if current_position_count >= max_positions:
-                        # 如果已持仓数量超过最大限制，放弃所有交易信号
-                        logger.info(f"当前持仓数量({current_position_count})已达到或超过最大限制({max_positions})，放弃所有交易信号")
-                        trade_signals = []
-                    else:
-                        # 过滤掉已持有的标的
-                        original_count = len(trade_signals)
-
-                        # logger.info(f"当前持仓标的: {held_symbols_converted}")
-                        # logger.info(f"当前持仓标的: {trade_signals}")
-                        trade_signals = [signal for signal in trade_signals if signal.symbol not in held_symbols_converted]
-                        
-                        # 记录过滤信息
-                        filtered_count = original_count - len(trade_signals)
-                        if filtered_count > 0:
-                            logger.info(f"已从交易信号中过滤掉 {filtered_count} 个已持有的标的")
-                except Exception as e:
-                    logger.error(f"创建OKX API实例失败: {e}")
-                    # 继续处理交易信号，不中断主流程
-            except Exception as e:
-                logger.error(f"获取OKX仓位数据时发生错误: {e}")
-                # 即使获取仓位数据出错，也继续处理交易信号，不中断主流程
+        # 仓位过滤已在multi_timeframe_system.py中通过filter_by_positions方法处理
 
         # 只有当有交易信号时才生成文件
         if len(trade_signals) > 0:

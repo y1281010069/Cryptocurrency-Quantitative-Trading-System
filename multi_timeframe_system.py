@@ -10,6 +10,7 @@ import ccxt
 import pandas as pd
 import numpy as np
 import talib as ta
+from lib2 import send_trading_signal_to_api
 from strategies.base_strategy import BaseStrategy
 from strategies.multi_timeframe_strategy import MultiTimeframeStrategy, MultiTimeframeSignal
 import sys
@@ -120,15 +121,49 @@ class MultiTimeframeProfessionalSystem:
             step_times['策略分析'] = time.time() - step_start
             logger.info(f"🔍 分析完成，找到 {sum(len(ops) for ops in all_opportunities.values())} 个交易机会")
             
-            # 步骤6: 生成报告和保存信号
+             # 步骤6: 生成报告和保存信号
             step_start = time.time()
             self._generate_reports(all_opportunities)
-            step_times['生成报告和保存信号'] = time.time() - step_start
-            
-            # 步骤7: 持仓分析
+            step_times['生成报告'] = time.time() - step_start
+
+            # 过滤信号
             step_start = time.time()
-            self._analyze_and_report_positions(all_opportunities)
-            step_times['持仓分析'] = time.time() - step_start
+            filtered_opportunities = {}
+            for strategy_name, opportunities in all_opportunities.items():
+                # 从策略实例中获取过滤后的信号
+                strategy_instance = self.strategies[strategy_name]
+                filtered_opportunities[strategy_name] = strategy_instance.filter_trade_signals(opportunities)
+            step_times['信号过滤'] = time.time() - step_start
+            logger.info(f"🧹 信号过滤完成，过滤后剩余 {sum(len(ops) for ops in filtered_opportunities.values())} 个交易信号")
+            
+
+        
+            # # 仓位过滤
+            # step_start = time.time()
+            # # 对过滤后的信号再进行仓位过滤
+            # for strategy_name, signals in filtered_opportunities.items():
+            #     strategy_instance = self.strategies[strategy_name]
+            #     filtered_opportunities[strategy_name] = strategy_instance.filter_by_positions(signals)
+            # step_times['仓位过滤'] = time.time() - step_start
+            # logger.info(f"📊 仓位过滤完成，过滤后剩余 {sum(len(ops) for ops in filtered_opportunities.values())} 个交易信号")
+            
+            # 保存交易信号
+            step_start = time.time()
+            for strategy_name, opportunities in filtered_opportunities.items():
+                # 获取策略实例并调用其保存交易信号的方法
+                strategy_instance = self.strategies[strategy_name]
+                strategy_instance._save_trade_signals(opportunities)
+            step_times['保存交易信号'] = time.time() - step_start
+            logger.info("📝 所有策略的交易信号已保存完成")
+    
+
+
+            #发送交易
+            
+            # # 步骤7: 持仓分析
+            # step_start = time.time()
+            # self._analyze_and_report_positions(filtered_opportunities)
+            # step_times['持仓分析'] = time.time() - step_start
             
             # 打印各步骤用时
             logger.info("\n=== 各步骤用时分析 ===")
@@ -345,20 +380,14 @@ class MultiTimeframeProfessionalSystem:
                     
                     logger.info(f"{i}. {symbol} - 操作: {overall_action}, 评分: {total_score:.3f}, 信心: {confidence_level}")
             
-            # 调用策略的save_trade_signals方法保存信号
-            strategy = self.strategies.get(strategy_name)
-            if strategy and hasattr(strategy, 'save_trade_signals'):
-                try:
-                    file_path = strategy.save_trade_signals(opportunities)
-                    if file_path:
-                        logger.info(f"✅ 交易信号已保存至: {file_path}")
-                except Exception as e:
-                    logger.error(f"保存交易信号时发生错误: {e}")
+            # 调用策略实例的方法保存交易信号
+            strategy_instance = self.strategies[strategy_name]
+            strategy_instance._save_trade_signals(opportunities)
             
             # 调用策略的save_multi_timeframe_analysis方法生成多时间框架分析报告
-            if strategy and hasattr(strategy, 'save_multi_timeframe_analysis'):
+            if strategy_instance and hasattr(strategy_instance, 'save_multi_timeframe_analysis'):
                 try:
-                    file_path = strategy.save_multi_timeframe_analysis(opportunities)
+                    file_path = strategy_instance.save_multi_timeframe_analysis(opportunities)
                     if file_path:
                         logger.info(f"✅ 多时间框架分析报告已保存至: {file_path}")
                 except Exception as e:
