@@ -43,7 +43,7 @@ TRADING_CONFIG = {
         "USDC/USDT"
     ],
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
-    "MAX_POSITIONS": 31,
+    "MAX_POSITIONS": 30,
     "MECHANISM_ID": 14,
     "LOSS": 0.5,  # 损失参数，传递给API
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
@@ -210,7 +210,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                 confidence = "低"
             
             # 添加详细日志，记录每个交易对的分析结果
-            logger.info(f"{symbol} 分析结果 - 总分: {total_score:.3f}, 操作: {overall_action}, 信号: {signals}")
+            # logger.info(f"{symbol} 分析结果 - 总分: {total_score:.3f}, 操作: {overall_action}, 信号: {signals}")
             
             # 获取15分钟时间框架的数据来计算ATR
             df_15m = data.get('15m')
@@ -359,8 +359,6 @@ class MultiTimeframeStrategy(BaseStrategy):
         
         # 使用基类的filter_trade_signals方法进行信号过滤
         trade_signals = self.filter_trade_signals(opportunities)
-        
-        # 仓位过滤已在multi_timeframe_system.py中通过filter_by_positions方法处理
 
         # 只有当有交易信号时才生成文件
         if len(trade_signals) > 0:
@@ -452,7 +450,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                         # 标准化持仓标的格式
                         # 1. 移除永续合约后缀（如'-SWAP'）
                         # 2. 统一转换为大写
-                        standard_symbol = symbol.replace('-SWAP', '').upper()
+                        standard_symbol = symbol.replace(':USDT', '').upper()
                         held_symbols_converted.append(standard_symbol)
                 
                 # 检查持仓数量是否超过最大限制
@@ -480,7 +478,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                                 continue
                                 
                             # 标准化交易信号中的标的格式
-                            standard_signal_symbol = signal_symbol.replace('-SWAP', '').upper()
+                            standard_signal_symbol = signal_symbol.replace(':USDT', '').upper()
                             
                             # 检查是否匹配已持仓
                             if standard_signal_symbol not in held_symbols_converted:
@@ -568,7 +566,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                     holding_hours = (datetime.now() - entry_time).total_seconds() / 3600
                     
                     # 只有持仓超过5小时才记录
-                    if holding_hours >= 25:
+                    if holding_hours >= 48:
                         positions_needing_attention.append({**position, 'reason': f'持仓时间超过5小时 ({round(holding_hours, 2)}小时)'})
                         self.logger.info(f"记录持仓超过5小时的标的: {pos_symbol} (持仓时间: {round(holding_hours, 2)}小时)")
                 except Exception as e:

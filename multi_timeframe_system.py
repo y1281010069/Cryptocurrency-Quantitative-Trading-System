@@ -122,12 +122,6 @@ class MultiTimeframeProfessionalSystem:
             step_times['策略分析'] = time.time() - step_start
             self.logger.info(f"🔍 分析完成，找到 {sum(len(ops) for ops in all_opportunities.values())} 个交易机会")
             
-            # 只打印最后两个交易机会（如果是字典，打印最后两个键值对）
-            if isinstance(all_opportunities, dict):
-                last_two = dict(list(all_opportunities.items())[-2:])
-                print(last_two)
-            else:
-                print(all_opportunities[-2:])
              # 步骤6: 生成报告和保存信号
             step_start = time.time()
             self._generate_reports(all_opportunities)
@@ -166,7 +160,7 @@ class MultiTimeframeProfessionalSystem:
             
             # # 步骤7: 持仓分析
             step_start = time.time()
-            self._analyze_and_report_positions(filtered_opportunities)
+            self._analyze_and_report_positions(opportunities)
             step_times['持仓分析'] = time.time() - step_start
             
             # 打印各步骤用时
@@ -397,7 +391,7 @@ class MultiTimeframeProfessionalSystem:
                 except Exception as e:
                     self.logger.error(f"保存多时间框架分析报告时发生错误: {e}")
     
-    def _analyze_and_report_positions(self, all_opportunities: Dict[str, List[Any]]):
+    def _analyze_and_report_positions(self, all_opportunities):
         """分析当前持仓并报告需要关注的持仓"""
         try:
             # 获取当前持仓
@@ -410,9 +404,12 @@ class MultiTimeframeProfessionalSystem:
             
             # 收集所有交易机会到一个列表
             all_opportunities_list = []
-            for opportunities in all_opportunities.values():
-                all_opportunities_list.extend(opportunities)
-            
+            # 添加类型检查，处理all_opportunities可能是列表或字典的情况
+            if isinstance(all_opportunities, dict):
+                for opportunities in all_opportunities.values():
+                    all_opportunities_list.extend(opportunities)
+            elif isinstance(all_opportunities, list):
+                all_opportunities_list.extend(all_opportunities)
             # 对每个策略调用analyze_positions方法
             for strategy_name, strategy in self.strategies.items():
                 if hasattr(strategy, 'analyze_positions'):
@@ -431,7 +428,9 @@ class MultiTimeframeProfessionalSystem:
                             # 发送需要关注的持仓信息到API
                             for pos in positions_needing_attention:
                                 try:
-                                    send_position_info_to_api(pos, self.logger)
+                                    # 格式化symbol，将AAVE/USDT:USDT转换为AAVE-USDT格式
+                                    symbol_formatted = pos['symbol'].split(':')[0].replace('/', '-')
+                                    send_position_info_to_api(pos, symbol_formatted, self.logger)
                                 except Exception as e:
                                     self.logger.error(f"发送持仓信息到API时发生错误: {e}")
                     except Exception as e:

@@ -147,7 +147,8 @@ def get_okx_positions(exchange, use_contract_utils=False):
                         'amount': float(position.get('contracts', 0)),
                         'entry_price': entry_price,
                         'current_price': current_price,
-                        'profit_percent': round(profit_percent, 2)
+                        'profit_percent': round(profit_percent, 2),
+                        'direction' : pos_side
                     }
             else:
                 # 默认使用简单的盈亏百分比计算（multi_timeframe_system.py格式）
@@ -160,7 +161,10 @@ def get_okx_positions(exchange, use_contract_utils=False):
                     'amount': float(position.get('contracts', 0)),
                     'entry_price': entry_price,
                     'current_price': current_price,
-                    'profit_percent': round(profit_percent, 2)
+                    'profit_percent': round(profit_percent, 2),
+                    'datetime': datetime.fromtimestamp(
+                            position.get('timestamp', 0) / 1000
+                        ).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else '',
                 }
             
             formatted_positions.append(formatted_position)
@@ -251,6 +255,21 @@ def send_position_info_to_api(position, name, logger_param=None):
     logger_used = logger_param if logger_param is not None else logger
     
     try:
+        # 检查position字典中必要的键是否存在
+        if 'direction' not in position:
+            # 尝试从posSide获取direction值
+            if 'posSide' in position:
+                logger_used.info("从posSide获取direction值")
+                # 将posSide值映射到direction格式（假设posSide的值为'long'或'short'）
+                position['direction'] = position['posSide']
+            else:
+                logger_used.error("position字典中缺少'direction'和'posSide'键")
+                return False
+        
+        if 'symbol' not in position:
+            logger_used.error("position字典中缺少'symbol'键")
+            return False
+            
         # 设置ac_type参数：多头对应c_l，空头对应c_s
         ac_type = 'c_l' if position['direction'] == 'long' else 'c_s'
         

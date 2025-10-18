@@ -193,7 +193,6 @@ class BaseStrategy(abc.ABC):
         return None
         
     def _save_trade_signals(self, opportunities: List[Any]):
-        print("调用_save_trade_signals")
         """保存交易信号到文件和Redis
      
         参数:
