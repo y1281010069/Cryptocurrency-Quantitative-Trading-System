@@ -82,7 +82,6 @@ from routes.leverage_routes import leverage_bp
 from control.report_control import ReportControl
 from control.okx_control import OKXControl
 from control.config_control import ConfigControl
-from control.leverage_control import LeverageControl
 from control.auth_control import AuthControl
 
 # 初始化OKX交易所连接
@@ -225,12 +224,10 @@ init_okx_exchange()
 global_report_control = ReportControl()
 global_okx_control = OKXControl()
 global_config_control = ConfigControl()
-global_leverage_control = LeverageControl()
 global_auth_control = AuthControl()
 
 # 将API实例注入到控制器中
 global_okx_control.set_api_clients(okx_public_api=okx_public_api, okx_account_api=okx_account_api, okx_official_api=okx_official_api, okx_exchange=okx_exchange)
-global_leverage_control.set_api_clients(okx_public_api=okx_public_api, okx_account_api=okx_account_api, okx_official_api=okx_official_api)
 print("=== 控制器API实例注入完成 ===")
 
 
@@ -1064,10 +1061,6 @@ global_okx_control.set_api_clients(
     okx_account_api=okx_account_api,
     okx_public_api=okx_public_api
 )
-global_leverage_control.set_api_clients(
-    okx_public_api=okx_public_api,
-    okx_account_api=okx_account_api
-)
 
 # 将控制器实例注入到路由模块
 import routes.report_routes
@@ -1079,7 +1072,7 @@ import routes.auth_routes
 routes.report_routes.report_control = global_report_control
 routes.okx_routes.okx_control = global_okx_control
 routes.config_routes.config_control = global_config_control
-routes.leverage_routes.leverage_control = global_leverage_control
+routes.leverage_routes.okx_control = global_okx_control
 routes.auth_routes.auth_control = global_auth_control
 
 # 注册路由蓝图到Flask应用

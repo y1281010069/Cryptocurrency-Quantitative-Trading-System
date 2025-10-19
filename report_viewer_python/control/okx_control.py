@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 
 class OKXControl:
     def __init__(self):
@@ -981,6 +982,281 @@ class OKXControl:
                 "message": f"修改订单时发生异常: {str(e)}",
                 "data": {}
             }
+    
+    def get_perpetual_symbols_with_leverage(self):
+        """获取所有永续合约交易对及其最大杠杆信息"""
+        try:
+            print("=== 开始获取永续合约交易对及其最大杠杆信息 ===")
+            
+            # 优先使用PublicAPI获取交易对信息
+            if self.okx_public_api:
+                print("使用OKX官方包的PublicAPI获取永续合约交易对")
+                result = self.okx_public_api.get_instruments('SWAP')
+            elif self.okx_official_api:
+                # 回退使用TradeAPI（如果PublicAPI不可用）
+                print("回退使用OKX官方包的TradeAPI获取永续合约交易对")
+                result = self.okx_official_api.get_instruments('SWAP')
+            else:
+                raise ValueError("没有可用的OKX API客户端")
+            
+            # 检查响应格式
+            if not isinstance(result, dict) or result.get('code') != '0' or not result.get('data'):
+                error_msg = result.get('msg', '获取交易对失败') if isinstance(result, dict) else '无效响应格式'
+                print(f"获取交易对失败: {error_msg}")
+                return {'error': error_msg, 'symbols': []}
+            
+            # 提取交易对信息，包括instId和lever
+            symbols = []
+            for item in result.get('data', []):
+                symbols.append({
+                    'symbol': item.get('instId'),
+                    'base': item.get('baseCcy'),
+                    'quote': item.get('quoteCcy'),
+                    'alias': item.get('alias'),
+                    'max_leverage': item.get('lever', '')
+                })
+            
+            # 按符号名称排序
+            symbols.sort(key=lambda x: x['symbol'])
+            print(f"成功获取{len(symbols)}个永续合约交易对")
+            return symbols
+        except Exception as e:
+            print(f"获取永续合约交易对时发生错误: {e}")
+            import traceback
+            print(f"错误堆栈: {traceback.format_exc()}")
+            return {'error': str(e), 'symbols': []}
+    
+    def set_max_leverage(self, symbol, leverage, mgn_mode='isolated'):
+        """设置单个交易对的最大杠杆"""
+        try:
+            print(f"=== 设置交易对 {symbol} 的杠杆为 {leverage}x ===")
+            
+            # 必须使用AccountAPI来设置杠杆
+            if not self.okx_account_api:
+                raise ValueError("没有可用的OKX AccountAPI客户端")
+            
+            # 验证杠杆值
+            leverage = float(leverage)
+            if leverage < 1 or leverage > 100:
+                raise ValueError("杠杆值必须在1到100之间")
+            
+            # 转换为整数字符串
+            lever_str = str(int(leverage))
+            
+            # 调用OKX API设置杠杆 - 使用正确的参数顺序
+            print(f"调用AccountAPI.set_leverage接口，参数: instId={symbol}, lever={lever_str}, mgnMode={mgn_mode}")
+            result = self.okx_account_api.set_leverage(
+                lever=lever_str,
+                mgnMode=mgn_mode,
+                instId=symbol
+            )
+            
+            # 检查响应
+            if isinstance(result, dict) and result.get('code') == '0':
+                print(f"成功设置 {symbol} 的杠杆为 {leverage}x")
+                return {
+                    'success': True,
+                    'message': f"成功设置 {symbol} 的杠杆为 {leverage}x",
+                    'symbol': symbol,
+                    'leverage': leverage
+                }
+            else:
+                error_msg = result.get('msg', '设置杠杆失败') if isinstance(result, dict) else '无效响应'
+                print(f"设置杠杆失败: {error_msg}")
+                return {
+                    'success': False,
+                    'message': error_msg
+                }
+        except ValueError as e:
+            print(f"参数验证错误: {e}")
+            return {'success': False, 'message': str(e)}
+        except Exception as e:
+            print(f"设置杠杆时发生错误: {e}")
+            import traceback
+            print(f"错误堆栈: {traceback.format_exc()}")
+            return {'success': False, 'message': f"设置杠杆失败: {str(e)}"}
+    
+    def set_all_max_leverage(self, mgn_mode='cross'):
+        """一键设置所有交易对为最大杠杆（仅支持全仓模式）"""
+        # 强制使用全仓模式，忽略传入的其他保证金模式
+        mgn_mode = 'cross'
+        print(f"=== 开始一键设置所有交易对最大杠杆，保证金模式: {mgn_mode}（仅支持全仓）===")
+        
+        try:
+            # 首先获取所有永续合约交易对及其最大杠杆信息
+            print("正在获取所有永续合约交易对及其最大杠杆信息...")
+            symbols_with_leverage = self.get_perpetual_symbols_with_leverage()
+            
+            # 检查是否获取成功
+            if isinstance(symbols_with_leverage, dict) and 'error' in symbols_with_leverage:
+                error_msg = symbols_with_leverage['error']
+                print(f"获取交易对失败: {error_msg}")
+                return {
+                    'success': False,
+                    'total': 0,
+                    'success_count': 0,
+                    'fail_count': 0,
+                    'message': error_msg,
+                    'results': []
+                }
+            
+            # 必须使用AccountAPI来设置杠杆
+            if not self.okx_account_api:
+                error_msg = "没有可用的OKX AccountAPI客户端"
+                print(error_msg)
+                return {
+                    'success': False,
+                    'total': len(symbols_with_leverage),
+                    'success_count': 0,
+                    'fail_count': len(symbols_with_leverage),
+                    'message': error_msg,
+                    'results': []
+                }
+            
+            # 存储结果
+            results = []
+            success_count = 0
+            fail_count = 0
+            
+            # 为每个交易对设置其最大杠杆值
+            total_symbols = len(symbols_with_leverage)
+            for i, symbol_info in enumerate(symbols_with_leverage):
+                symbol = symbol_info.get('symbol')
+                max_leverage = symbol_info.get('max_leverage')
+                
+                # 计算进度
+                progress = int((i + 1) / total_symbols * 100)
+                print(f"处理进度: {progress}% - 正在设置 {symbol} 的最大杠杆 {max_leverage}x")
+                
+                # 检查是否有最大杠杆值
+                if not max_leverage:
+                    result = {
+                        'success': False,
+                        'message': '未找到最大杠杆值',
+                        'symbol': symbol,
+                        'max_leverage': None
+                    }
+                    results.append(result)
+                    fail_count += 1
+                    continue
+                
+                try:
+                    # 转换杠杆为浮点数和整数字符串
+                    leverage_float = float(max_leverage)
+                    lever_str = str(int(leverage_float))
+                    
+                    # 添加延迟以避免API速率限制
+                    time.sleep(0.5)  # 500ms延迟
+                    
+                    # 调用OKX API设置杠杆 - 强制使用全仓模式
+                    api_result = self.okx_account_api.set_leverage(
+                        lever=lever_str,
+                        mgnMode="cross",  # 强制使用全仓模式
+                        instId=symbol,
+                        posSide="net"  # 使用净头寸模式
+                    )
+                    
+                    # 检查响应
+                    if isinstance(api_result, dict) and api_result.get('code') == '0':
+                        print(f"成功设置 {symbol} 的杠杆为 {leverage_float}x")
+                        result = {
+                            'success': True,
+                            'message': f"成功设置为最大杠杆 {leverage_float}x",
+                            'symbol': symbol,
+                            'max_leverage': leverage_float
+                        }
+                        success_count += 1
+                    else:
+                        error_msg = api_result.get('msg', '设置杠杆失败') if isinstance(api_result, dict) else '无效响应'
+                        print(f"设置杠杆失败: {error_msg}")
+                        result = {
+                            'success': False,
+                            'message': error_msg,
+                            'symbol': symbol,
+                            'max_leverage': leverage_float
+                        }
+                        fail_count += 1
+                    
+                    results.append(result)
+                except Exception as e:
+                    error_msg = f"设置杠杆时发生错误: {str(e)}"
+                    print(error_msg)
+                    result = {
+                        'success': False,
+                        'message': error_msg,
+                        'symbol': symbol,
+                        'max_leverage': max_leverage
+                    }
+                    results.append(result)
+                    fail_count += 1
+            
+            # 返回统计结果
+            overall_result = {
+                'success': success_count > 0,
+                'total': total_symbols,
+                'success_count': success_count,
+                'fail_count': fail_count,
+                'results': results
+            }
+            
+            print(f"一键设置最大杠杆完成: 成功 {success_count}/{total_symbols}，失败 {fail_count}/{total_symbols}")
+            return overall_result
+            
+        except Exception as e:
+            error_msg = f"一键设置最大杠杆时发生错误: {str(e)}"
+            print(error_msg)
+            import traceback
+            print(f"错误堆栈: {traceback.format_exc()}")
+            return {
+                'success': False,
+                'total': 0,
+                'success_count': 0,
+                'fail_count': 0,
+                'message': error_msg,
+                'results': []
+            }
+    
+    def batch_set_leverage(self, symbols, leverage, mgn_mode='isolated'):
+        """批量设置杠杆"""
+        print(f"=== 开始批量设置杠杆，交易对数量: {len(symbols)}，杠杆倍数: {leverage} ===")
+        
+        results = []
+        success_count = 0
+        fail_count = 0
+        logs = []
+        
+        for i, symbol in enumerate(symbols):
+            # 计算进度
+            progress = int((i + 1) / len(symbols) * 100)
+            print(f"处理进度: {progress}% - 正在设置 {symbol}")
+            
+            result = self.set_max_leverage(symbol, leverage, mgn_mode)
+            log_entry = {
+                'symbol': symbol,
+                'success': result['success'],
+                'message': result['message']
+            }
+            logs.append(log_entry)
+            
+            if result['success']:
+                success_count += 1
+            else:
+                fail_count += 1
+            
+            # 避免请求过于频繁
+            import time
+            time.sleep(0.1)
+        
+        final_result = {
+            'total': len(symbols),
+            'success_count': success_count,
+            'fail_count': fail_count,
+            'results': logs,
+            'success': success_count > 0
+        }
+        
+        print(f"=== 批量设置杠杆完成 - 成功: {success_count}, 失败: {fail_count} ===")
+        return final_result
     
     def get_okx_positions(self):
         """获取OKX交易所的当前仓位数据"""
