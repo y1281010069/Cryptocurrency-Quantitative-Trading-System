@@ -22,11 +22,11 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 # 导入OKX市场数据API
 from okx.MarketData import MarketAPI
 # 导入策略类
-from strategies.multi_timeframe_strategy import MultiTimeframeStrategy
+from strategies.multi_timeframe_strategy_ema import MultiTimeframeStrategy
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO,  # 设置为DEBUG级别以输出详细的时间框架验证日志
     format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -47,8 +47,10 @@ class BacktestEngine:
         self.strategy = strategy_class()
         self.initial_capital = initial_capital
         self.capital = initial_capital
-        self.position = 0  # 持仓数量
+        self.position = 0  # 持仓数量 (正数为多仓，负数为空仓)
         self.entry_price = 0.0  # 入场价格
+        self.stop_loss = 0.0  # 仓位止损价格
+        self.take_profit = 0.0  # 仓位止盈价格
         self.symbol = symbol
         self.trades = []  # 交易记录
         self.timeframe_data = {}  # 多时间框架数据
@@ -58,7 +60,7 @@ class BacktestEngine:
     
     def fetch_historical_data(self, timeframe, start_time, end_time):
         """
-        获取历史K线数据
+        获取历史K线数据（优先从Excel读取，不存在则从OKX API获取并保存）
         
         Args:
             timeframe: 时间框架
@@ -68,6 +70,41 @@ class BacktestEngine:
         Returns:
             pandas.DataFrame: K线数据
         """
+        # 创建数据目录
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'historical_data')
+        os.makedirs(data_dir, exist_ok=True)
+        
+        # 生成Excel文件名
+        start_date = pd.to_datetime(start_time, unit='ms').strftime('%Y%m%d')
+        end_date = pd.to_datetime(end_time, unit='ms').strftime('%Y%m%d')
+        excel_file = os.path.join(data_dir, f'{self.symbol}_{timeframe}_{start_date}_{end_date}.xlsx')
+        
+        # 尝试从Excel读取数据
+        start_datetime = pd.to_datetime(start_time, unit='ms')
+        end_datetime = pd.to_datetime(end_time, unit='ms')
+        
+        try:
+            if os.path.exists(excel_file):
+                logger.info(f"尝试从Excel文件读取{timeframe}数据: {excel_file}")
+                df = pd.read_excel(excel_file)
+                
+                # 检查数据时间范围是否覆盖需求
+                df_start = df['datetime'].min()
+                df_end = df['datetime'].max()
+                
+                if df_start <= start_datetime and df_end >= end_datetime:
+                    # 过滤出需要的时间范围
+                    df = df[(df['datetime'] >= start_datetime) & (df['datetime'] <= end_datetime)]
+                    logger.info(f"成功从Excel读取数据，共{len(df)}条，时间范围: {df['datetime'].min()} 至 {df['datetime'].max()}")
+                    return df
+                else:
+                    logger.info(f"Excel数据时间范围不完整，需要从API获取，当前Excel范围: {df_start} - {df_end}，需要范围: {start_datetime} - {end_datetime}")
+            else:
+                logger.info(f"Excel文件不存在，将从API获取数据: {excel_file}")
+        except Exception as e:
+            logger.warning(f"读取Excel文件失败: {str(e)}，将从API获取数据")
+        
+        # 从API获取数据
         all_data = []
         limit = 300  # 恢复官方limit为300
         request_count = 0  # 记录请求次数
@@ -264,6 +301,15 @@ class BacktestEngine:
             except Exception as e:
                 logger.warning(f"保存数据统计信息失败: {str(e)}")
             
+            # 保存数据到Excel文件，方便下次读取
+            try:
+                # 确保excel_file变量在这个作用域内可见
+                if 'excel_file' in locals():
+                    df.to_excel(excel_file, index=False)
+                    logger.info(f"数据已保存到Excel文件: {excel_file}")
+            except Exception as e:
+                logger.warning(f"保存数据到Excel失败: {str(e)}")
+            
             return df
         except Exception as e:
             logger.error(f"处理{timeframe}数据时出错: {str(e)}")
@@ -357,7 +403,7 @@ class BacktestEngine:
         # 设置固定时间范围：20250101 往后3个月
         start_date = datetime(2025, 1, 1)
         # 计算3个月后的日期
-        end_date = start_date + timedelta(days=90)  # 简化计算，使用90天近似3个月
+        end_date = start_date + timedelta(days=240)  # 简化计算，使用90天近似3个月
         
         # 转换为毫秒时间戳
         end_time_ms = int(end_date.timestamp() * 1000)
@@ -487,6 +533,40 @@ class BacktestEngine:
                 logger.warning(f"缺少以下时间框架的数据: {missing_tfs}")
                 continue
             
+            # 添加详细日志来验证时间框架数据的对应关系
+            logger.debug(f"【时间框架数据验证】")
+            # 获取基准时间（15m时间框架的当前时间）
+            base_time = None
+            if '15m' in current_data:
+                base_time = current_data['15m']['datetime'].iloc[-1]
+            
+            # 记录每个时间框架的数据时间范围和最新时间点
+            for tf, df in current_data.items():
+                # 获取数据的时间范围
+                data_start_time = df['datetime'].min()
+                data_end_time = df['datetime'].max()
+                latest_time = df['datetime'].iloc[-1]
+                latest_close = df['close'].iloc[-1]
+                
+                # 计算与基准时间的时间差（如果有基准时间）
+                time_diff = None
+                if base_time:
+                    time_diff = (base_time - latest_time).total_seconds() / 60  # 转换为分钟
+                
+                logger.debug(f"  - {tf}时间框架:")
+                logger.debug(f"    数据范围: {data_start_time} 至 {data_end_time}")
+                logger.debug(f"    数据点数: {len(df)} 条")
+                logger.debug(f"    最新K线: 时间={latest_time}, 收盘价={latest_close}")
+                if time_diff is not None:
+                    logger.debug(f"    与基准时间差: {time_diff:.2f} 分钟")
+                    # 检查时间差异是否合理
+                    if tf == '15m' and abs(time_diff) > 7.5:  # 15分钟K线允许50%偏差
+                        logger.warning(f"    ⚠️  {tf}时间框架与基准时间差异过大: {time_diff:.2f}分钟")
+                    elif tf == '1h' and abs(time_diff) > 60:  # 1小时K线允许50%偏差
+                        logger.warning(f"    ⚠️  {tf}时间框架与基准时间差异过大: {time_diff:.2f}分钟")
+                    elif tf == '4h' and abs(time_diff) > 240:  # 4小时K线允许50%偏差
+                        logger.warning(f"    ⚠️  {tf}时间框架与基准时间差异过大: {time_diff:.2f}分钟")
+            
             # 获取当前价格和时间（优先使用15m时间框架的收盘价和时间戳，以获得更细粒度的日志记录）
             if '15m' in current_data:
                 current_price = current_data['15m']['close'].iloc[-1]
@@ -504,24 +584,53 @@ class BacktestEngine:
                 logger.error("没有可用的时间框架数据，跳过当前迭代")
                 continue
             
-            logger.info(f"[{current_date}] 迭代索引: {i}/{len(base_df)-1}, 处理数据点，使用的时间框架: {list(current_data.keys())}")
+            # 记录当前迭代的基本信息
+            logger.info(f"[{current_date}] 迭代索引: {i}/{len(base_df)-1}, 处理数据点")
+            # 记录各时间框架的最新收盘价，便于比较价格一致性
+            price_info = []
+            for tf in sorted(current_data.keys()):
+                price = current_data[tf]['close'].iloc[-1]
+                price_info.append(f"{tf}:{price:.2f}")
+            logger.info(f"  当前价格各时间框架: {', '.join(price_info)}")
             
+            #反转current_data的下每个k线的顺序
+            current_data2 = {tf: df.iloc[::-1].reset_index(drop=True) for tf, df in current_data.items()}
             # 使用策略生成信号
-            signal = self.strategy.analyze(self.symbol, current_data)
-            
+            signal = self.strategy.analyze(self.symbol, current_data2)
+
+            # filter_trade_signals 过滤交易信号
+            #转换signal，把他放到list里
+            signal = [signal]
+            signal = self.strategy.filter_trade_signals(signal)
+            if signal:
+                signal = signal[0]
+
             # 记录生成的信号详情
             if signal:
                 # 获取15分钟时间框架的信号
                 signal_trigger_timeframe = self.strategy.config.get('SIGNAL_TRIGGER_TIMEFRAME', '15m')
                 
                 logger.info(f"[{current_date}] 生成信号: 操作={signal.overall_action}, 评分={signal.total_score:.3f}")
+                
+                # 记录各个时间框架的信号，便于分析信号一致性
+                logger.debug("  各时间框架信号详情:")
+                for tf in sorted(current_data.keys()):
+                    # 构建对应的属性名（例如：4h -> h4_signal）
+                    attr_name = None
+                    if tf == '4h':
+                        attr_name = 'h4_signal'
+                    elif tf == '1h':
+                        attr_name = 'h1_signal'
+                    elif tf == '15m':
+                        attr_name = 'm15_signal'
+                    else:
+                        attr_name = f'{tf}_signal'
+                    
+                    tf_signal = getattr(signal, attr_name, '未知')
+                    is_trigger_signal = "(触发信号)" if tf == signal_trigger_timeframe else ""
+                    logger.debug(f"  - {tf}: {tf_signal} {is_trigger_signal}")
             else:
                 logger.info(f"[{current_date}] 未生成信号")
-                # 记录各个时间框架的信号
-                for tf in current_data.keys():
-                    tf_signal = getattr(signal, f'{tf.replace("4h", "h4").replace("1h", "h1").replace("15m", "m15")}_signal', '未知')
-                    is_trigger_signal = "(触发信号)" if tf == signal_trigger_timeframe else ""
-                    logger.info(f"  - {tf}时间框架信号: {tf_signal} {is_trigger_signal}")
             
             # 执行交易（模拟记录，不调用实际API）
             if signal:
@@ -531,8 +640,10 @@ class BacktestEngine:
                 # 买入信号且当前无持仓，同时检查15分钟时间框架信号
                 if signal.overall_action == "买入" and self.position == 0 and "买入" in timeframe_15m_signal:
                     # 全仓买入（模拟）
-                    self.position = self.capital / current_price
+                    self.position = self.capital / current_price  # 多仓为正数
                     self.entry_price = current_price
+                    self.stop_loss = signal.stop_loss  # 记录仓位的止损价格
+                    self.take_profit = signal.target_short  # 记录仓位的止盈价格
                     
                     # 记录模拟交易
                     trade = {
@@ -586,10 +697,14 @@ class BacktestEngine:
                     # 重置持仓
                     self.position = 0
                     self.entry_price = 0.0
-                
-                # 检查止损
-                elif self.position > 0 and current_price <= signal.stop_loss:
-                    # 触发止损（模拟）
+                    self.stop_loss = 0.0  # 重置止损价格
+                    self.take_profit = 0.0  # 重置止盈价格
+            
+            # 检查止损止盈 - 每根K线都检查
+            if self.position > 0:
+                # 检查止损 - 多仓情况
+                if current_price <= self.stop_loss:
+                    # 触发止损（模拟）- 多仓
                     self.capital = self.position * current_price
                     profit = self.capital - self.initial_capital
                     profit_rate = (profit / self.initial_capital) * 100
@@ -605,18 +720,20 @@ class BacktestEngine:
                         'profit_rate': profit_rate,
                         'trade_profit': trade_profit,
                         'trade_profit_rate': (trade_profit / (self.position * self.entry_price)) * 100,
-                        'stop_loss_price': signal.stop_loss
+                        'stop_loss_price': self.stop_loss
                     }
                     self.trades.append(trade)
-                    logger.info(f"[{current_date}] 触发止损: {current_price:.2f}, 止损价: {signal.stop_loss:.2f}, 当前资金: {self.capital:.2f}, 总收益: {profit_rate:.2f}%")
+                    logger.info(f"[{current_date}] 触发止损(多仓): {current_price:.2f}, 止损价: {self.stop_loss:.2f}, 当前资金: {self.capital:.2f}, 总收益: {profit_rate:.2f}%")
                     
                     # 重置持仓
                     self.position = 0
                     self.entry_price = 0.0
+                    self.stop_loss = 0.0
+                    self.take_profit = 0.0
                 
-                # 检查止盈
-                elif self.position > 0 and current_price >= signal.target_short:
-                    # 触发止盈（模拟）
+                # 检查止盈 - 多仓情况
+                elif current_price >= self.take_profit:
+                    # 触发止盈（模拟）- 多仓
                     self.capital = self.position * current_price
                     profit = self.capital - self.initial_capital
                     profit_rate = (profit / self.initial_capital) * 100
@@ -632,14 +749,75 @@ class BacktestEngine:
                         'profit_rate': profit_rate,
                         'trade_profit': trade_profit,
                         'trade_profit_rate': (trade_profit / (self.position * self.entry_price)) * 100,
-                        'target_price': signal.target_short
+                        'target_price': self.take_profit
                     }
                     self.trades.append(trade)
-                    logger.info(f"[{current_date}] 触发止盈: {current_price:.2f}, 目标价: {signal.target_short:.2f}, 当前资金: {self.capital:.2f}, 总收益: {profit_rate:.2f}%")
+                    logger.info(f"[{current_date}] 触发止盈(多仓): {current_price:.2f}, 目标价: {self.take_profit:.2f}, 当前资金: {self.capital:.2f}, 总收益: {profit_rate:.2f}%")
                     
                     # 重置持仓
                     self.position = 0
                     self.entry_price = 0.0
+                    self.stop_loss = 0.0
+                    self.take_profit = 0.0
+            
+            elif self.position < 0:
+                # 检查止损 - 空仓情况
+                if current_price >= self.stop_loss:
+                    # 触发止损（模拟）- 空仓
+                    self.capital = abs(self.position) * current_price
+                    profit = self.capital - self.initial_capital
+                    profit_rate = (profit / self.initial_capital) * 100
+                    trade_profit = self.capital - (abs(self.position) * self.entry_price)
+                    
+                    trade = {
+                        'type': 'STOP_LOSS',
+                        'date': current_date,
+                        'price': current_price,
+                        'amount': abs(self.position),
+                        'capital': self.capital,
+                        'profit': profit,
+                        'profit_rate': profit_rate,
+                        'trade_profit': trade_profit,
+                        'trade_profit_rate': (trade_profit / (abs(self.position) * self.entry_price)) * 100,
+                        'stop_loss_price': self.stop_loss
+                    }
+                    self.trades.append(trade)
+                    logger.info(f"[{current_date}] 触发止损(空仓): {current_price:.2f}, 止损价: {self.stop_loss:.2f}, 当前资金: {self.capital:.2f}, 总收益: {profit_rate:.2f}%")
+                    
+                    # 重置持仓
+                    self.position = 0
+                    self.entry_price = 0.0
+                    self.stop_loss = 0.0
+                    self.take_profit = 0.0
+                    
+                # 检查止盈 - 空仓情况
+                elif current_price <= self.take_profit:
+                    # 触发止盈（模拟）- 空仓
+                    self.capital = abs(self.position) * current_price
+                    profit = self.capital - self.initial_capital
+                    profit_rate = (profit / self.initial_capital) * 100
+                    trade_profit = self.capital - (abs(self.position) * self.entry_price)
+                    
+                    trade = {
+                        'type': 'TAKE_PROFIT',
+                        'date': current_date,
+                        'price': current_price,
+                        'amount': abs(self.position),
+                        'capital': self.capital,
+                        'profit': profit,
+                        'profit_rate': profit_rate,
+                        'trade_profit': trade_profit,
+                        'trade_profit_rate': (trade_profit / (abs(self.position) * self.entry_price)) * 100,
+                        'target_price': self.take_profit
+                    }
+                    self.trades.append(trade)
+                    logger.info(f"[{current_date}] 触发止盈(空仓): {current_price:.2f}, 目标价: {self.take_profit:.2f}, 当前资金: {self.capital:.2f}, 总收益: {profit_rate:.2f}%")
+                    
+                    # 重置持仓
+                    self.position = 0
+                    self.entry_price = 0.0
+                    self.stop_loss = 0.0
+                    self.take_profit = 0.0
         
         # 回测结束，如果仍有持仓则平仓
         if self.position > 0:
@@ -742,9 +920,10 @@ class BacktestEngine:
         
         # 保存交易记录（模拟记录）
         if self.trades:
-            # 创建结果目录
-            os.makedirs('reports/multi_timeframe_reports', exist_ok=True)
-            report_filename = os.path.join('reports/multi_timeframe_reports', f'btc_backtest_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+            # 创建结果目录 - 使用绝对路径确保在项目根目录下
+            reports_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'reports/multi_timeframe_reports')
+            os.makedirs(reports_dir, exist_ok=True)
+            report_filename = os.path.join(reports_dir, f'btc_backtest_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
             
             with open(report_filename, 'w', encoding='utf-8') as f:
                 # 将datetime转换为字符串以便JSON序列化

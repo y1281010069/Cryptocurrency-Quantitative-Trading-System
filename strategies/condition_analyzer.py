@@ -2,7 +2,7 @@ import pandas as pd
 
 
 def calculate_trend_indicators_and_score(df: pd.DataFrame, current_price, timeframe):
-    """计算技术指标并计算趋势评分
+    """计算技术指标并计算趋势评分（SMA版本）
     
     Args:
         df: 包含价格数据的DataFrame
@@ -27,6 +27,37 @@ def calculate_trend_indicators_and_score(df: pd.DataFrame, current_price, timefr
         elif current_price < sma_20 < sma_50:
             score -= 2
         elif current_price < sma_20:
+            score -= 1
+    
+    return score
+
+
+def calculate_ema_trend_indicators_and_score(df: pd.DataFrame, current_price, timeframe):
+    """计算技术指标并计算趋势评分（EMA版本）
+    
+    Args:
+        df: 包含价格数据的DataFrame
+        current_price: 当前价格，用于处理数据不足的情况
+        timeframe: 时间框架
+        
+    Returns:
+        int: 趋势评分
+    """
+    # 计算技术指标 - 使用EMA代替SMA
+    ema_20 = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+    ema_50 = df['close'].ewm(span=50, adjust=False).mean() if len(df) >= 50 else pd.Series([current_price])
+    ema_50 = ema_50.iloc[-1] if not ema_50.empty else current_price
+    
+    # 计算趋势评分
+    score = 0
+    if (timeframe != "15m"):
+        if current_price > ema_20 > ema_50:
+            score += 2
+        elif current_price > ema_20:
+            score += 1
+        elif current_price < ema_20 < ema_50:
+            score -= 2
+        elif current_price < ema_20:
             score -= 1
     
     return score
