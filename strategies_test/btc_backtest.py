@@ -14,6 +14,14 @@ from datetime import datetime, timedelta
 import logging
 import json
 
+# ===== 配置参数 =====
+# 交易标的配置
+symbol = "BTC-USDT"  # 交易对
+
+# 回测时间范围配置
+start_date = datetime(2025, 1, 1)  # 开始日期
+end_date = start_date + timedelta(days=240)  # 结束日期（开始日期往后240天）
+
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 添加OKX库到路径
@@ -35,14 +43,13 @@ logger = logging.getLogger(__name__)
 class BacktestEngine:
     """回测引擎"""
     
-    def __init__(self, strategy_class, initial_capital=10000.0, symbol="BTC-USDT"):
+    def __init__(self, strategy_class, initial_capital=10000.0):
         """
         初始化回测引擎
         
         Args:
             strategy_class: 策略类
             initial_capital: 初始资金
-            symbol: 交易对
         """
         self.strategy = strategy_class()
         self.initial_capital = initial_capital
@@ -51,7 +58,7 @@ class BacktestEngine:
         self.entry_price = 0.0  # 入场价格
         self.stop_loss = 0.0  # 仓位止损价格
         self.take_profit = 0.0  # 仓位止盈价格
-        self.symbol = symbol
+        self.symbol = symbol  # 使用配置的交易对
         self.trades = []  # 交易记录
         self.timeframe_data = {}  # 多时间框架数据
         self.api_timeframe_map = {}  # API时间框架映射
@@ -278,6 +285,13 @@ class BacktestEngine:
             # 按时间排序（升序）
             df = df.sort_values('datetime', ascending=True).reset_index(drop=True)
             
+            # 去重处理，避免分页拉取时出现重复数据
+            original_len = len(df)
+            df = df.drop_duplicates(subset=['timestamp'], keep='last')
+            duplicate_count = original_len - len(df)
+            if duplicate_count > 0:
+                logger.info(f"移除了{duplicate_count}条重复数据，剩余{len(df)}条数据")
+            
             # 过滤掉超出指定时间范围的数据
             start_datetime = pd.to_datetime(start_time, unit='ms')
             end_datetime = pd.to_datetime(end_time, unit='ms')
@@ -409,7 +423,8 @@ class BacktestEngine:
         end_time_ms = int(end_date.timestamp() * 1000)
         start_time_ms = int(start_date.timestamp() * 1000)
         
-        logger.info(f"回测时间范围: {start_date} 至 {end_date}")
+        # 使用配置中的时间范围
+        logger.info(f"使用配置的回测时间范围: {start_date} 至 {end_date}")
         
         # 获取策略所需的时间框架
         strategy_timeframes = self.strategy.get_required_timeframes()
@@ -441,6 +456,81 @@ class BacktestEngine:
         
         return True
     
+    def validate_timeframe_continuity(self):
+        """校验所有时间框架数据是否连续
+        
+        检查每个时间框架的K线数据是否连续，允许一定的容差范围。
+        
+        Returns:
+            bool: 所有时间框架数据都连续返回True，否则返回False
+        """
+        logger.info("开始校验时间框架数据连续性...")
+        
+        # 定义每个时间框架的预期间隔（秒）和允许的容差（秒）
+        timeframe_intervals = {
+            '15m': {'expected': 15 * 60, 'tolerance': 30},  # 15分钟，允许30秒容差
+            '1H': {'expected': 60 * 60, 'tolerance': 60},   # 1小时，允许60秒容差
+            '4H': {'expected': 4 * 60 * 60, 'tolerance': 120}  # 4小时，允许120秒容差
+        }
+        
+        all_continuous = True
+        
+        # 校验每个时间框架的数据连续性
+        for api_tf, df in self.timeframe_data.items():
+            if df.empty:
+                logger.error(f"时间框架{api_tf}数据为空")
+                all_continuous = False
+                continue
+            
+            logger.info(f"校验{api_tf}时间框架数据连续性...")
+            
+            # 获取对应的预期间隔和容差
+            interval_info = timeframe_intervals.get(api_tf)
+            
+            if not interval_info:
+                logger.warning(f"未定义{api_tf}的时间间隔信息，跳过校验")
+                continue
+            
+            expected_interval = interval_info['expected']
+            tolerance = interval_info['tolerance']
+            
+            # 计算相邻K线的时间差（秒）
+            df['time_diff'] = df['datetime'].diff().dt.total_seconds()
+            
+            # 找出不连续的K线（跳过第一条记录的NaN值）
+            gaps = df.iloc[1:][
+                (df['time_diff'] < (expected_interval - tolerance)) | 
+                (df['time_diff'] > (expected_interval + tolerance))
+            ]
+            
+            if not gaps.empty:
+                logger.error(f"在{api_tf}时间框架中发现{gaps.shape[0]}个不连续的K线数据点")
+                
+                # 记录前5个不连续的点作为示例
+                for idx, row in gaps.head().iterrows():
+                    prev_time = df['datetime'].iloc[idx-1]
+                    curr_time = df['datetime'].iloc[idx]
+                    logger.error(f"  位置{idx}: {prev_time} -> {curr_time}, 时间差: {row['time_diff']:.2f}秒")
+                
+                all_continuous = False
+            else:
+                logger.info(f"✅ {api_tf}时间框架数据连续性校验通过")
+                
+                # 记录数据统计信息
+                logger.info(f"  数据点数: {len(df)}")
+                logger.info(f"  时间范围: {df['datetime'].iloc[0]} 至 {df['datetime'].iloc[-1]}")
+                
+                # 计算并记录平均时间间隔
+                avg_interval = df['time_diff'].mean()
+                logger.info(f"  平均时间间隔: {avg_interval:.2f}秒 (预期: {expected_interval}秒)")
+        
+        if all_continuous:
+            logger.info("✅ 所有时间框架数据连续性校验通过")
+        else:
+            logger.error("❌ 时间框架数据连续性校验失败")
+        
+        return all_continuous
+
     def run_backtest(self):
         """运行回测"""
         logger.info("开始回测...")
@@ -471,6 +561,12 @@ class BacktestEngine:
             for idx, dt in enumerate(df['datetime']):
                 tf_index_maps[api_tf][dt] = idx
         
+        # 校验所有时间框架数据是否连续
+        # if not self.validate_timeframe_continuity():
+        #     logger.error("时间框架数据连续性校验失败，回测无法继续")
+        #     return
+        # logger.debug(f"校验完成")
+
         for i in range(168, len(base_df)):  # 跳过前168个数据点，确保有足够的历史数据计算指标
             logger.debug(f"迭代索引: {i}/{len(base_df)-1}")
             
@@ -594,12 +690,11 @@ class BacktestEngine:
             logger.info(f"  当前价格各时间框架: {', '.join(price_info)}")
             
             #反转current_data的下每个k线的顺序
-            current_data2 = {tf: df.iloc[::-1].reset_index(drop=True) for tf, df in current_data.items()}
+            current_data2 = {tf: df.sort_values('datetime', ascending=False).reset_index(drop=True) for tf, df in current_data.items()}
             # 使用策略生成信号
             signal = self.strategy.analyze(self.symbol, current_data2)
 
             # filter_trade_signals 过滤交易信号
-            #转换signal，把他放到list里
             signal = [signal]
             signal = self.strategy.filter_trade_signals(signal)
             if signal:
@@ -764,11 +859,16 @@ class BacktestEngine:
                 # 检查止损 - 空仓情况
                 if current_price >= self.stop_loss:
                     # 触发止损（模拟）- 空仓
+                    # 计算当前资本：持仓数量 * 当前价格
                     self.capital = abs(self.position) * current_price
+                    # 计算总收益
                     profit = self.capital - self.initial_capital
+                    # 计算收益率
                     profit_rate = (profit / self.initial_capital) * 100
+                    # 计算本次交易的盈利
                     trade_profit = self.capital - (abs(self.position) * self.entry_price)
                     
+                    # 创建交易记录
                     trade = {
                         'type': 'STOP_LOSS',
                         'date': current_date,
@@ -793,11 +893,16 @@ class BacktestEngine:
                 # 检查止盈 - 空仓情况
                 elif current_price <= self.take_profit:
                     # 触发止盈（模拟）- 空仓
+                    # 计算当前资本：持仓数量 * 当前价格
                     self.capital = abs(self.position) * current_price
+                    # 计算总收益
                     profit = self.capital - self.initial_capital
+                    # 计算收益率
                     profit_rate = (profit / self.initial_capital) * 100
+                    # 计算本次交易的盈利
                     trade_profit = self.capital - (abs(self.position) * self.entry_price)
                     
+                    # 创建交易记录
                     trade = {
                         'type': 'TAKE_PROFIT',
                         'date': current_date,
@@ -963,8 +1068,7 @@ if __name__ == "__main__":
     # 创建回测引擎
     backtest = BacktestEngine(
         strategy_class=MultiTimeframeStrategy,
-        initial_capital=10000.0,
-        symbol="BTC-USDT"
+        initial_capital=10000.0
     )
     
     # 运行回测
