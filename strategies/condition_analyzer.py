@@ -102,8 +102,8 @@ def calculate_rsi_crossover_score(df: pd.DataFrame):
     """
     # 计算RSI
     delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(window=7).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=7).mean()
     rs = gain / loss
     rsi_series = 100 - (100 / (1 + rs))
     
