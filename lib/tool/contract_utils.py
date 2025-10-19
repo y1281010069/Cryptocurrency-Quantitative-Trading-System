@@ -12,67 +12,97 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from models.variety_model import Variety, variety_model
 from models.db_connection import db
 
-class ContractInfoCache:
-    """合约信息缓存类，用于高效查询合约的乘数信息"""
-    def __init__(self):
-        self.cache = {}
-        self.load_all_contracts()
-        
-    def load_all_contracts(self):
-        """从数据库加载所有合约信息到缓存"""
-        try:
-            # 从数据库获取所有合约信息
-            contract_records = variety_model.get_all()
-            if contract_records:
-                for record in contract_records:
-                    # 使用合约名称作为缓存键（小写以便不区分大小写查询）
-                    symbol = record.get('name', '').lower()
-                    min_qty = Decimal(str(record.get('minQty', '0')))
-                    self.cache[symbol] = min_qty
-                print(f"成功加载{len(self.cache)}个合约信息到缓存")
-        except Exception as e:
-            print(f"加载合约信息失败: {e}")
+
+def get_ticker(symbol):
+    """获取指定交易对的ticker信息
     
-    def get_contract_min_qty(self, symbol):
-        """获取指定合约的乘数（一张合约等于多少个币）"""
-        # 标准化交易对格式，尝试多种可能的格式
-        symbol = symbol.replace('/', '-').replace('_', '-').lower()
+    参数:
+        symbol: 交易对，例如 'BTC/USDT'
         
-        # 首先在缓存中查找
-        if symbol in self.cache:
-            return self.cache[symbol]
+    返回:
+        ticker信息字典，包含价格等相关数据
+    """
+    # 示例实现：使用模拟数据
+    # 在实际应用中，这里应该调用真实的交易所API
+    mock_data = {
+        'BTC/USDT': {'price': 50000.0, 'timestamp': 1678886400},
+        'ETH/USDT': {'price': 3000.0, 'timestamp': 1678886400},
+        'BNB/USDT': {'price': 400.0, 'timestamp': 1678886400}
+    }
+    
+    if symbol in mock_data:
+        return mock_data[symbol]
+    else:
+        raise ValueError(f"未找到交易对 {symbol} 的ticker信息")
+
+def get_contract_info(symbol):
+    """获取指定交易对的合约信息
+    
+    参数:
+        symbol: 交易对，例如 'BTC/USDT'
         
-        # 如果缓存中没有，尝试从数据库直接查询
-        try:
-            # 尝试多种可能的格式，包括去掉-swap后缀
-            base_symbol = symbol.replace('-swap', '') if '-swap' in symbol else symbol
-            formats_to_try = [
-                symbol,
-                base_symbol,  # 去掉-swap后缀的版本
-                symbol.replace('-', '/'),
-                base_symbol.replace('-', '/'),
-                symbol.upper(),
-                base_symbol.upper(),
-                symbol.replace('-', '/').upper(),
-                base_symbol.replace('-', '/').upper()
-            ]
+    返回:
+        合约信息字典，包含最小变动价位、合约乘数等
+    """
+    # 示例实现：使用模拟数据
+    # 在实际应用中，这里应该调用真实的交易所API
+    mock_data = {
+        'BTC/USDT': {'min_price_change': 0.5, 'contract_multiplier': 1.0, 'symbol': 'BTC/USDT'},
+        'ETH/USDT': {'min_price_change': 0.05, 'contract_multiplier': 1.0, 'symbol': 'ETH/USDT'},
+        'BNB/USDT': {'min_price_change': 0.1, 'contract_multiplier': 1.0, 'symbol': 'BNB/USDT'}
+    }
+    
+    if symbol in mock_data:
+        return mock_data[symbol]
+    else:
+        raise ValueError(f"未找到交易对 {symbol} 的合约信息")
+
+class ContractInfoCache:
+    """合约信息缓存类，用于高效查询合约的乘数信息和最小价格变动单位
+    """
+    
+    def __init__(self):
+        """初始化合约信息缓存
+        """
+        # 示例实现：使用模拟数据初始化缓存
+        # 在实际应用中，这里应该从数据库或其他持久化存储加载数据
+        self.contract_data = {
+            'BTC/USDT': {'min_price_change': 0.5, 'contract_multiplier': 1.0, 'symbol': 'BTC/USDT'},
+            'ETH/USDT': {'min_price_change': 0.05, 'contract_multiplier': 1.0, 'symbol': 'ETH/USDT'},
+            'BNB/USDT': {'min_price_change': 0.1, 'contract_multiplier': 1.0, 'symbol': 'BNB/USDT'},
+            'XRP/USDT': {'min_price_change': 0.0001, 'contract_multiplier': 1.0, 'symbol': 'XRP/USDT'},
+            'ADA/USDT': {'min_price_change': 0.001, 'contract_multiplier': 1.0, 'symbol': 'ADA/USDT'}
+        }
+    
+    def get_contract_multiplier(self, symbol):
+        """根据交易对获取合约乘数
+        
+        参数:
+            symbol: 交易对，例如 'BTC/USDT'
             
-            for format_attempt in formats_to_try:
-                # 使用数据库模型查询
-                contract_info = variety_model.get(name=format_attempt)
-                if contract_info and 'minQty' in contract_info:
-                    min_qty = Decimal(str(contract_info['minQty']))
-                    # 更新缓存
-                    self.cache[symbol] = min_qty
-                    return min_qty
+        返回:
+            合约乘数
+        """
+        # 从缓存中查询合约乘数
+        if symbol in self.contract_data:
+            return self.contract_data[symbol]['contract_multiplier']
+        else:
+            raise ValueError(f"未找到交易对 {symbol} 的合约信息")
+    
+    def get_min_price_change(self, symbol):
+        """根据交易对获取最小价格变动单位
+        
+        参数:
+            symbol: 交易对，例如 'BTC/USDT'
             
-            # 如果找不到，默认返回1.0
-            print(f"未找到合约信息: {symbol}")
-            return Decimal('1.0')
-        except Exception as e:
-            print(f"查询合约信息失败: {e}")
-            # 出错时默认返回1.0
-            return Decimal('1.0')
+        返回:
+            最小价格变动单位
+        """
+        # 从缓存中查询最小价格变动单位
+        if symbol in self.contract_data:
+            return self.contract_data[symbol]['min_price_change']
+        else:
+            raise ValueError(f"未找到交易对 {symbol} 的合约信息")
 
 # 创建全局的合约信息缓存实例
 contract_cache = ContractInfoCache()
