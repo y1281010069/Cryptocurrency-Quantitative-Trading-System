@@ -26,6 +26,7 @@ class ReportControl:
                 # 返回包含错误信息的数据结构，不使用模拟数据
                 error_data = {
                     'analysisTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),  # 添加generated_at字段
                     'timeframeDimensions': '周线→日线→4小时→1小时→15分钟',
                     'totalOpportunities': 0,
                     'error': f"报告文件不存在: {report_path}",
@@ -42,6 +43,7 @@ class ReportControl:
             
             report_data = {
                 'analysisTime': '',
+                'generated_at': '',  # 添加generated_at字段
                 'timeframeDimensions': '',
                 'totalOpportunities': 0,
                 'opportunities': []
@@ -54,6 +56,9 @@ class ReportControl:
                 report_data['analysisTime'] = time_match.group(1).strip()
             else:
                 report_data['analysisTime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # 设置generated_at字段等于analysisTime
+            report_data['generated_at'] = report_data['analysisTime']
                 
             # 解析时间框架维度
             dimension_match = re.search(r'时间框架维度:?\s*(.+)', content)
@@ -182,6 +187,7 @@ class ReportControl:
             # 返回错误数据
             error_data = {
                 'analysisTime': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),  # 添加generated_at字段
                 'timeframeDimensions': '周线→日线→4小时→1小时→15分钟',
                 'totalOpportunities': 0,
                 'error': f"解析报告时发生错误: {str(e)}",

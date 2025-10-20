@@ -50,7 +50,9 @@ TRADING_CONFIG = {
         '4h': 300,   # 4小时
         '1h': 300,   # 1小时
         '15m': 300   # 15分钟
-    }  # 不同时间框架所需的数据长度
+    },  # 不同时间框架所需的数据长度
+    "min_price_diff_percent": 0.6,
+    "max_price_diff_percent": 10.0
 }
 
 # 配置日志记录器

@@ -16,7 +16,7 @@ import json
 
 # ===== 配置参数 =====
 # 交易标的配置
-symbols = ["BTC-USDT"]  # 交易对列表
+symbols = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "ARB-USDT", "LTC_USDT"]  # 交易对列表
 
 # 回测时间范围配置
 start_date = datetime(2025, 1, 1)  # 开始日期
@@ -649,22 +649,23 @@ class BacktestEngine:
                     elif tf == '4h' and abs(time_diff) > 240:  # 4小时K线允许50%偏差
                         logger.warning(f"    ⚠️  {tf}时间框架与基准时间差异过大: {time_diff:.2f}分钟")
             
-            # 获取当前价格和时间（优先使用15m时间框架的收盘价和时间戳，以获得更细粒度的日志记录）
+            # 获取当前价格、最高价、最低价和时间（优先使用15m时间框架的数据，以获得更细粒度的日志记录）
             if '15m' in current_data:
-                print("15m")
-                print(current_data['15m']['close'].iloc[-1])
-                print(current_data['15m']['datetime'].iloc[-1])
-                print(current_data['1h']['close'].iloc[-1])
-                print(current_data['1h']['datetime'].iloc[-1])
                 current_price = current_data['15m']['close'].iloc[-1]
+                current_high = current_data['15m']['high'].iloc[-1]
+                current_low = current_data['15m']['low'].iloc[-1]
                 current_date = current_data['15m']['datetime'].iloc[-1]
             elif '1h' in current_data:
                 current_price = current_data['1h']['close'].iloc[-1]
+                current_high = current_data['1h']['high'].iloc[-1]
+                current_low = current_data['1h']['low'].iloc[-1]
                 current_date = current_data['1h']['datetime'].iloc[-1]
             elif current_data:
                 # 如果没有15m和1h数据，使用第一个可用时间框架的数据
                 first_tf = list(current_data.keys())[0]
                 current_price = current_data[first_tf]['close'].iloc[-1]
+                current_high = current_data[first_tf]['high'].iloc[-1]
+                current_low = current_data[first_tf]['low'].iloc[-1]
                 current_date = current_data[first_tf]['datetime'].iloc[-1]
                 logger.warning(f"使用{first_tf}时间框架作为价格和时间参考")
             else:
@@ -787,7 +788,7 @@ class BacktestEngine:
             # 检查止损止盈 - 每根K线都检查
             if self.position > 0:
                 # 检查止损 - 多仓情况
-                if current_price <= self.stop_loss:
+                if current_low <= self.stop_loss:
                     # 触发止损（模拟）- 多仓
                     self.capital = self.position * current_price
                     profit = self.capital - self.initial_capital
@@ -816,7 +817,7 @@ class BacktestEngine:
                     self.take_profit = 0.0
                 
                 # 检查止盈 - 多仓情况
-                elif current_price >= self.take_profit:
+                elif current_high >= self.take_profit:
                     # 触发止盈（模拟）- 多仓
                     self.capital = self.position * current_price
                     profit = self.capital - self.initial_capital
@@ -846,7 +847,7 @@ class BacktestEngine:
             
             elif self.position < 0:
                 # 检查止损 - 空仓情况
-                if current_price >= self.stop_loss:
+                if current_high >= self.stop_loss:
                     # 触发止损（模拟）- 空仓
                     # 计算当前资本：持仓数量 * 当前价格
                     self.capital = abs(self.position) * current_price
@@ -880,7 +881,7 @@ class BacktestEngine:
                     self.take_profit = 0.0
                     
                 # 检查止盈 - 空仓情况
-                elif current_price <= self.take_profit:
+                elif current_low <= self.take_profit:
                     # 触发止盈（模拟）- 空仓
                     # 计算当前资本：持仓数量 * 当前价格
                     self.capital = abs(self.position) * current_price

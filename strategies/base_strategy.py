@@ -405,12 +405,16 @@ class BaseStrategy(abc.ABC):
                         # 添加止损价格过滤
                         if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
                             price_diff_percent = abs(op.entry_price - op.stop_loss) / op.entry_price * 100
-                            if price_diff_percent >= 0.3 and price_diff_percent <= 10:
+                            # 从配置中获取价格差异百分比阈值，默认为0.3%和10%
+                            min_price_diff_percent = self.config.get('min_price_diff_percent', 0.3)
+                            max_price_diff_percent = self.config.get('max_price_diff_percent', 10)
+                            
+                            if price_diff_percent >= min_price_diff_percent and price_diff_percent <= max_price_diff_percent:
                                 trade_signals.append(op)
-                            elif price_diff_percent < 0.3:
-                                self.logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格不足0.3%而被过滤掉: {price_diff_percent:.2f}%")
+                            elif price_diff_percent < min_price_diff_percent:
+                                self.logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格不足{min_price_diff_percent}%而被过滤掉: {price_diff_percent:.2f}%")
                             else:
-                                self.logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格超过10%而被过滤掉: {price_diff_percent:.2f}%")
+                                self.logger.info(f"{op.symbol} 买入信号因止损价格距离当前价格超过{max_price_diff_percent}%而被过滤掉: {price_diff_percent:.2f}%")
                         else:
                             trade_signals.append(op)
                 else:
