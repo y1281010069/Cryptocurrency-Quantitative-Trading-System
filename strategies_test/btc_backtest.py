@@ -16,7 +16,7 @@ import json
 
 # ===== 配置参数 =====
 # 交易标的配置
-symbol = "BTC-USDT"  # 交易对
+symbols = ["BTC-USDT", "ETH-USDT"]  # 交易对列表
 
 # 回测时间范围配置
 start_date = datetime(2025, 1, 1)  # 开始日期
@@ -43,13 +43,14 @@ logger = logging.getLogger(__name__)
 class BacktestEngine:
     """回测引擎"""
     
-    def __init__(self, strategy_class, initial_capital=10000.0):
+    def __init__(self, strategy_class, initial_capital=10000.0, symbol=None):
         """
         初始化回测引擎
         
         Args:
             strategy_class: 策略类
             initial_capital: 初始资金
+            symbol: 交易对
         """
         self.strategy = strategy_class()
         self.initial_capital = initial_capital
@@ -58,7 +59,7 @@ class BacktestEngine:
         self.entry_price = 0.0  # 入场价格
         self.stop_loss = 0.0  # 仓位止损价格
         self.take_profit = 0.0  # 仓位止盈价格
-        self.symbol = symbol  # 使用配置的交易对
+        self.symbol = symbol  # 使用传入的交易对
         self.trades = []  # 交易记录
         self.timeframe_data = {}  # 多时间框架数据
         self.api_timeframe_map = {}  # API时间框架映射
@@ -687,7 +688,7 @@ class BacktestEngine:
             for tf in sorted(current_data.keys()):
                 price = current_data[tf]['close'].iloc[-1]
                 price_info.append(f"{tf}:{price:.2f}")
-            logger.info(f"  当前价格各时间框架: {', '.join(price_info)}")
+            # logger.info(f"  当前价格各时间框架: {', '.join(price_info)}")
             
             #反转current_data的下每个k线的顺序
             current_data2 = {tf: df.sort_values('datetime', ascending=False).reset_index(drop=True) for tf, df in current_data.items()}
@@ -1062,17 +1063,24 @@ class BacktestEngine:
 
 
 if __name__ == "__main__":
-    logger.info("启动BTC多时间框架策略回测")
+    logger.info("启动多交易对多时间框架策略回测")
     logger.info("注意: 本回测使用模拟记录方式，不会调用实际的OKX仓位API")
     
-    # 创建回测引擎
-    backtest = BacktestEngine(
-        strategy_class=MultiTimeframeStrategy,
-        initial_capital=10000.0
-    )
+    # 遍历每个交易对执行回测
+    for symbol in symbols:
+        logger.info(f"开始交易对 {symbol} 的回测")
+        
+        # 创建回测引擎
+        backtest = BacktestEngine(
+            strategy_class=MultiTimeframeStrategy,
+            initial_capital=10000.0,
+            symbol=symbol
+        )
+        
+        # 运行回测
+        backtest.run_backtest()
+        
+        logger.info(f"交易对 {symbol} 回测完成")
     
-    # 运行回测
-    backtest.run_backtest()
-    
-    logger.info("回测完成")
+    logger.info("所有交易对回测完成")
     logger.info("所有交易均为模拟记录，已保存到reports/multi_timeframe_reports目录")
