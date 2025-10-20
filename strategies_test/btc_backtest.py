@@ -16,7 +16,7 @@ import json
 
 # ===== 配置参数 =====
 # 交易标的配置
-symbols = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "ARB-USDT", "LTC_USDT"]  # 交易对列表
+symbols = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "ARB-USDT", "LTC-USDT"]  # 交易对列表
 
 # 回测时间范围配置
 start_date = datetime(2025, 1, 1)  # 开始日期
