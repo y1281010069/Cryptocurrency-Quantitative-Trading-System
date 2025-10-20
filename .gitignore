@@ -22,6 +22,7 @@ reports/
 *.xlsx
 *.csv
 test/*_data_analysis.txt
+strategies_test/reports/
 stragies_test/historical_data/
 
 # Python 缓存

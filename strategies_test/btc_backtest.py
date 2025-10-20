@@ -1026,10 +1026,13 @@ class BacktestEngine:
         
         # 保存交易记录（模拟记录）
         if self.trades:
-            # 创建结果目录 - 使用绝对路径确保在项目根目录下
-            reports_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'reports/multi_timeframe_reports')
+            # 创建结果目录 - 使用绝对路径确保在strategies_test目录下
+            base_reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
+            # 创建年月日时分秒格式的子文件夹
+            timestamp_dir = datetime.now().strftime('%Y%m%d_%H%M%S')
+            reports_dir = os.path.join(base_reports_dir, timestamp_dir, 'multi_timeframe_reports')
             os.makedirs(reports_dir, exist_ok=True)
-            report_filename = os.path.join(reports_dir, f'btc_backtest_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+            report_filename = os.path.join(reports_dir, f'{self.symbol}_backtest_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
             
             with open(report_filename, 'w', encoding='utf-8') as f:
                 # 将datetime转换为字符串以便JSON序列化
