@@ -63,17 +63,11 @@ class MultiTimeframeProfessionalSystem:
             # 配置OKX交易所连接
             # 不设置defaultType，先获取现货交易对数据
             # 如果需要合约交易，可以在获取具体数据时指定类型
-            self.exchange = ccxt.okx({
-                'apiKey': API_KEY,
-                'secret': SECRET_KEY,
-                'password': PASSPHRASE,
-                'timeout': 30000,
-                'enableRateLimit': True,
+            self.exchange = ccxt.okx({'apiKey': API_KEY,'secret': SECRET_KEY,'password': PASSPHRASE,'timeout': 30000,'enableRateLimit': True,
                 'options': {
                     'defaultType': 'spot'  # 默认使用现货市场
                 }
             })
-            
             # 测试连接是否成功
             self.exchange.fetch_balance()
             self.logger.info("✅ 交易所连接成功!")
@@ -155,22 +149,17 @@ class MultiTimeframeProfessionalSystem:
                 strategy_instance.save_trade_signals(opportunities)
             step_times['保存交易信号'] = time.time() - step_start
             self.logger.info("📝 所有策略的交易信号已保存完成")
-    
 
-            
             # # 步骤7: 持仓分析
             step_start = time.time()
             self._analyze_and_report_positions(opportunities)
             step_times['持仓分析'] = time.time() - step_start
-            
             # 打印各步骤用时
             self.logger.info("\n=== 各步骤用时分析 ===")
             for step, duration in step_times.items():
                 self.logger.info(f"{step}: {duration:.2f}秒")
-            
             total_time = sum(step_times.values())
             self.logger.info(f"总用时: {total_time:.2f}秒")
-            
             return all_opportunities
         except Exception as e:
             self.logger.error(f"❌ 分析过程中发生错误: {e}")
@@ -181,7 +170,6 @@ class MultiTimeframeProfessionalSystem:
         try:
             # 获取交易所所有交易对
             markets = self.exchange.fetch_markets()
-            
             # 筛选活跃的现货交易对
             # 1. 只保留USDT交易对
             # 2. 只保留可交易的交易对
@@ -193,7 +181,6 @@ class MultiTimeframeProfessionalSystem:
                    market['quote'] == 'USDT' and 
                    market['type'] == 'spot'
             ]
-            
             return symbols
         except Exception as e:
             self.logger.error(f"获取活跃交易对失败: {e}")
@@ -222,7 +209,6 @@ class MultiTimeframeProfessionalSystem:
             
             # 按照成交量降序排序
             high_liquidity_symbols.sort(key=lambda s: tickers[s].get('quoteVolume', 0), reverse=True)
-            
             return high_liquidity_symbols
         except Exception as e:
             self.logger.error(f"筛选高流动性交易对失败: {e}")
@@ -237,7 +223,6 @@ class MultiTimeframeProfessionalSystem:
                 timeframes = strategy.get_required_timeframes()
                 timeframes_info[name] = timeframes
                 self.logger.info(f"策略 '{name}' 需要的时间框架: {timeframes}")
-        
         return timeframes_info
     
     def _fetch_klines_data(self, symbols: List[str], timeframes_info: Dict[str, Dict[str, int]]) -> Dict[str, Dict[str, pd.DataFrame]]:
@@ -261,28 +246,18 @@ class MultiTimeframeProfessionalSystem:
             symbol_data = {}
             try:
                 self.logger.info(f"正在获取 {symbol} 的K线数据...")
-                
                 for tf in all_timeframes:
                     try:
                         # 获取足够的历史数据
                         limit = min_lengths[tf] + 10  # 多获取10根K线作为缓冲
                         ohlcv = self.exchange.fetch_ohlcv(symbol, tf, limit=limit)
-                        
                         if ohlcv:
                             # 转换为DataFrame
                             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                             df.set_index('timestamp', inplace=True)
-                            
                             # 确保数据类型正确
-                            df = df.astype({
-                                'open': 'float64',
-                                'high': 'float64',
-                                'low': 'float64',
-                                'close': 'float64',
-                                'volume': 'float64'
-                            })
-                            
+                            df = df.astype({'open': 'float64','high': 'float64','low': 'float64','close': 'float64','volume': 'float64'})
                             symbol_data[tf] = df
                         else:
                             self.logger.warning(f"未获取到 {symbol} 的 {tf} 数据")
@@ -290,37 +265,30 @@ class MultiTimeframeProfessionalSystem:
                     except Exception as e:
                         self.logger.error(f"获取 {symbol} 的 {tf} 数据失败: {e}")
                         symbol_data[tf] = pd.DataFrame()
-                
                 # 检查是否有足够的数据
                 valid_timeframes = [tf for tf, df in symbol_data.items() if not df.empty and len(df) >= min_lengths[tf]]
-                
                 # 如果至少有一半时间框架的数据，则保留
                 if len(valid_timeframes) >= len(all_timeframes) / 2:
                     all_data[symbol] = symbol_data
                 else:
                     self.logger.warning(f"{symbol} 的有效时间框架不足，跳过")
-                    
             except Exception as e:
                 self.logger.error(f"处理 {symbol} 的数据时发生错误: {e}")
-        
         return all_data
     
     def _analyze_with_strategies(self, all_data: Dict[str, Dict[str, pd.DataFrame]]) -> Dict[str, List[Any]]:
         """使用所有注册的策略进行分析"""
         all_opportunities = {name: [] for name in self.strategies}
-        
         # 创建线程池，用于并行分析
         with ThreadPoolExecutor(max_workers=5) as executor:
             # 提交所有分析任务
             futures = {}
-            
             for symbol, data in all_data.items():
                 for strategy_name, strategy in self.strategies.items():
                     # 检查策略是否有analyze方法
                     if hasattr(strategy, 'analyze'):
                         # 检查该策略需要的时间框架数据是否可用
                         required_timeframes = strategy.get_required_timeframes() if hasattr(strategy, 'get_required_timeframes') else {}
-                        
                         # 检查是否所有必需的时间框架都有数据
                         has_required_data = True
                         missing_timeframes = []
@@ -328,16 +296,13 @@ class MultiTimeframeProfessionalSystem:
                             if tf not in data or data[tf].empty or len(data[tf]) < required_timeframes[tf]:
                                 has_required_data = False
                                 missing_timeframes.append(tf)
-                        
                         # 如果没有足够的时间框架数据，跳过该策略的分析
                         if not has_required_data:
                             self.logger.info(f"跳过 {symbol} 的 {strategy_name} 分析：缺少必需的时间框架数据 - 缺少的周期: {missing_timeframes}")
                             continue
-                        
                         # 提交分析任务
                         future_key = (symbol, strategy_name)
                         futures[future_key] = executor.submit(strategy.analyze, symbol, data)
-            
             # 收集分析结果
             for (symbol, strategy_name), future in futures.items():
                 try:
@@ -346,7 +311,6 @@ class MultiTimeframeProfessionalSystem:
                         all_opportunities[strategy_name].append(result)
                 except Exception as e:
                     self.logger.error(f"{strategy_name} 分析 {symbol} 时发生错误: {e}")
-        
         return all_opportunities
     
     def _generate_reports(self, all_opportunities: Dict[str, List[Any]]):
@@ -363,7 +327,6 @@ class MultiTimeframeProfessionalSystem:
             except Exception as e:
                 self.logger.error(f"排序交易机会时发生错误: {e}")
                 # 如果排序失败，继续执行，不中断流程
-            
             self.logger.info(f"📝 策略 '{strategy_name}' 找到 {len(opportunities)} 个交易机会")
             
             # 打印前5个最佳交易机会
@@ -399,9 +362,7 @@ class MultiTimeframeProfessionalSystem:
             if not current_positions:
                 self.logger.info("📋 当前没有持仓")
                 return
-            
             self.logger.info(f"📋 获取到 {len(current_positions)} 个当前持仓")
-            
             # 收集所有交易机会到一个列表
             all_opportunities_list = []
             # 添加类型检查，处理all_opportunities可能是列表或字典的情况
@@ -415,16 +376,13 @@ class MultiTimeframeProfessionalSystem:
                 if hasattr(strategy, 'analyze_positions'):
                     try:
                         positions_needing_attention = strategy.analyze_positions(current_positions, all_opportunities_list)
-                        
                         if positions_needing_attention:
                             logger.info(f"⚠️  策略 '{strategy_name}' 发现 {len(positions_needing_attention)} 个需要关注的持仓")
-                            
                             # 保存需要关注的持仓
                             if hasattr(strategy, 'save_positions_needing_attention'):
                                 file_path = strategy.save_positions_needing_attention(positions_needing_attention)
                                 if file_path:
                                     logger.info(f"✅ 需要关注的持仓已保存至: {file_path}")
-                            
                             # 发送需要关注的持仓信息到API
                             for pos in positions_needing_attention:
                                 try:
@@ -443,11 +401,9 @@ if __name__ == "__main__":
     try:
         # 初始化系统
         system = MultiTimeframeProfessionalSystem()
-        
         # 运行分析
         system.logger.info("🚀 开始多时间框架分析...")
         all_opportunities = system.run_analysis()
-        
         system.logger.info("✅ 多时间框架分析完成!")
     except Exception as e:
         # 使用全局logger记录错误

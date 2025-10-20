@@ -10,13 +10,8 @@ try:
     from config import TRADING_CONFIG, REDIS_CONFIG
 except ImportError:
     # 使用默认配置
-    TRADING_CONFIG = {
-        'ATR_PERIOD': 14
-    }
-    REDIS_CONFIG = {
-        'ADDR': 'localhost:6379',
-        'PASSWORD': None
-    }
+    TRADING_CONFIG = {'ATR_PERIOD': 14}
+    REDIS_CONFIG = {'ADDR': '149.129.66.131:6379','PASSWORD': 'Bianhao8@'}
 
 # 配置日志（只保留一套配置）
 logger = logging.getLogger(__name__)
@@ -33,24 +28,16 @@ def calculate_atr(df, period=None):
         period = TRADING_CONFIG['ATR_PERIOD']
     """计算ATR值（平均真实波动幅度）"""
     # 计算真实波动幅度
-    df['tr'] = np.maximum(
-        df['high'] - df['low'],
-        np.maximum(
-            abs(df['high'] - df['close'].shift(1)),
-            abs(df['low'] - df['close'].shift(1))
-        )
-    )
+    df['tr'] = np.maximum(df['high'] - df['low'],np.maximum(abs(df['high'] - df['close'].shift(1)),abs(df['low'] - df['close'].shift(1))))
     # 计算ATR (TR的N日移动平均线)
     df['atr'] = df['tr'].rolling(window=period).mean()
     return df['atr'].iloc[-1] if len(df) >= period else 0.0
 
 def get_okx_positions(exchange, use_contract_utils=False):
     """获取OKX当前仓位列表
-    
     Args:
         exchange: ccxt交易所实例
         use_contract_utils: 是否使用contract_utils计算成本（主要用于app.py）
-    
     Returns:
         list: 格式化后的仓位列表
     """
@@ -65,14 +52,7 @@ def get_okx_positions(exchange, use_contract_utils=False):
         password = REDIS_CONFIG.get('PASSWORD', None)
         
         # 尝试连接Redis
-        redis_client = redis.Redis(
-            host=host,
-            port=int(port),
-            password=password,
-            db=0,
-            socket_connect_timeout=2,
-            socket_timeout=2
-        )
+        redis_client = redis.Redis(host=host,port=int(port),password=password,db=0,socket_connect_timeout=2,socket_timeout=2)
         redis_client.ping()
         
         # 尝试从缓存获取数据
@@ -98,13 +78,6 @@ def get_okx_positions(exchange, use_contract_utils=False):
             
             # 计算当前价格（使用最新市场数据）
             current_price = 0
-            # if symbol in exchange.markets:
-            #     try:
-            #         ticker = exchange.fetch_ticker(symbol)
-            #         current_price = ticker.get('last', 0)
-            #     except Exception as e:
-            #         logger.warning(f"获取{symbol}当前价格失败: {e}")
-            #         current_price = 0
             
             # 计算盈亏百分比
             entry_price = float(position.get('entryPrice', 0))
@@ -121,52 +94,20 @@ def get_okx_positions(exchange, use_contract_utils=False):
                     profit_percent = (profit / cost * 100) if cost > 0 else 0
                     
                     # app.py格式的返回数据
-                    formatted_position = {
-                        'symbol': symbol,
-                        'type': position.get('type', 'spot'),
-                        'amount': amount,
-                        'entry_price': entry_price,
-                        'current_price': current_price,
-                        'profit': profit,
-                        'profit_percent': profit_percent,
-                        'datetime': datetime.fromtimestamp(
-                            position.get('timestamp', 0) / 1000
-                        ).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else '',
-                        'cost': cost,
-                        'posSide': pos_side
-                    }
+                    formatted_position = {'symbol': symbol, 'type': position.get('type', 'spot'), 'amount': amount, 'entry_price': entry_price, 'current_price': current_price, 'profit': profit, 'profit_percent': profit_percent, 'datetime': datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else '', 'cost': cost, 'posSide': pos_side}
                 except Exception as e:
                     logger.warning(f"使用contract_utils计算成本失败: {e}")
                     # 默认使用简单的盈亏百分比计算
                     if entry_price > 0 and current_price > 0:
                         profit_percent = ((current_price - entry_price) / entry_price) * 100
                     
-                    formatted_position = {
-                        'symbol': symbol,
-                        'posSide': pos_side,
-                        'amount': float(position.get('contracts', 0)),
-                        'entry_price': entry_price,
-                        'current_price': current_price,
-                        'profit_percent': round(profit_percent, 2),
-                        'direction' : pos_side
-                    }
+                    formatted_position = {'symbol': symbol, 'posSide': pos_side, 'amount': float(position.get('contracts', 0)), 'entry_price': entry_price, 'current_price': current_price, 'profit_percent': round(profit_percent, 2), 'direction': pos_side}
             else:
                 # 默认使用简单的盈亏百分比计算（multi_timeframe_system.py格式）
                 if entry_price > 0 and current_price > 0:
                     profit_percent = ((current_price - entry_price) / entry_price) * 100
                 
-                formatted_position = {
-                    'symbol': symbol,
-                    'posSide': pos_side,
-                    'amount': float(position.get('contracts', 0)),
-                    'entry_price': entry_price,
-                    'current_price': current_price,
-                    'profit_percent': round(profit_percent, 2),
-                    'datetime': datetime.fromtimestamp(
-                            position.get('timestamp', 0) / 1000
-                        ).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else '',
-                }
-            
+                formatted_position = {'symbol': symbol, 'posSide': pos_side, 'amount': float(position.get('contracts', 0)), 'entry_price': entry_price, 'current_price': current_price, 'profit_percent': round(profit_percent, 2), 'datetime': datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''}
             formatted_positions.append(formatted_position)
         
         # 将结果存入Redis缓存，设置5秒过期
@@ -189,13 +130,11 @@ def get_okx_positions(exchange, use_contract_utils=False):
 
 def send_trading_signal_to_api(signal, name, logger_param=None, LOSS=None):
     """发送交易信号到API
-    
     Args:
         signal: 交易信号对象，包含symbol、overall_action、target_short、stop_loss等属性
         name: 信号名称
         logger_param: 可选的日志记录器，如果不提供则使用默认logger
         LOSS: 可选的损失参数，如果不提供则使用配置中的默认值
-    
     Returns:
         bool: 是否成功发送信号
     """
@@ -215,14 +154,7 @@ def send_trading_signal_to_api(signal, name, logger_param=None, LOSS=None):
         # 使用传入的LOSS值，如果未提供则使用配置中的默认值
         loss_value = LOSS if LOSS is not None else TRADING_CONFIG.get('LOSS', 1)
         
-        payload = {
-            'name': name,
-            'mechanism_id': TRADING_CONFIG.get('MECHANISM_ID', ''),
-            'stop_win_price': signal.target_short,
-            'stop_loss_price': signal.stop_loss,
-            'ac_type': ac_type,
-            'loss': loss_value
-        }
+        payload = {'name': name, 'mechanism_id': TRADING_CONFIG.get('MECHANISM_ID', ''), 'stop_win_price': signal.target_short, 'stop_loss_price': signal.stop_loss, 'ac_type': ac_type, 'loss': loss_value}
         
         # 发送POST请求（表单形式）
         url = 'http://149.129.66.131:81/myOrder'
@@ -301,7 +233,7 @@ def send_position_info_to_api(position, name, logger_param=None):
             return True
         else:
             logger_used.warning(f"发送持仓信息到API失败 (状态码: {response.status_code}): {position['symbol']}")
-            logger_used.info(f"API响应: {response.text}")  # 将debug改为info以确保日志可见
+            logger_used.info(f"API响应: {response.text}")
             return False
     except Exception as e:
         logger_used.error(f"发送持仓信息到API时发生异常: {e}")

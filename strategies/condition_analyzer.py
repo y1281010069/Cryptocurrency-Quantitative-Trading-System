@@ -1,6 +1,5 @@
 import pandas as pd
 
-
 def calculate_trend_indicators_and_score(df: pd.DataFrame, current_price, timeframe):
     """计算技术指标并计算趋势评分（SMA版本）
     
@@ -31,7 +30,6 @@ def calculate_trend_indicators_and_score(df: pd.DataFrame, current_price, timefr
     
     return score
 
-
 def calculate_ema_trend_indicators_and_score(df: pd.DataFrame, current_price, timeframe):
     """计算技术指标并计算趋势评分（EMA版本）
     
@@ -61,7 +59,6 @@ def calculate_ema_trend_indicators_and_score(df: pd.DataFrame, current_price, ti
             score -= 1
     
     return score
-
 
 def calculate_rsi_score(df: pd.DataFrame, timeframe):
     """计算RSI指标并返回RSI评分
@@ -118,7 +115,6 @@ def calculate_rsi_crossover_score(df: pd.DataFrame):
             score -= 2  # 前一根k大于70，当前k小于70 -2分
     
     return score
-
 
 def calculate_volume_score(df: pd.DataFrame):
     """计算成交量评分

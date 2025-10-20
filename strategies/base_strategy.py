@@ -43,11 +43,9 @@ class BaseStrategy(abc.ABC):
     def analyze(self, symbol: str, data: Dict[str, pd.DataFrame]) -> Any:
         """
         使用策略分析交易对
-        
         Args:
             symbol: 交易对符号
             data: 多时间框架数据，格式为 {timeframe: dataframe}
-        
         Returns:
             分析结果，可以是任何格式，取决于具体策略
         """
@@ -57,7 +55,6 @@ class BaseStrategy(abc.ABC):
     def get_required_timeframes(self) -> Dict[str, int]:
         """
         获取策略所需的时间框架和数据长度
-        
         Returns:
             字典，键为时间框架名称，值为所需数据长度
         """
@@ -83,16 +80,7 @@ class BaseStrategy(abc.ABC):
             # 从子类获取OKX_CONFIG配置
             if hasattr(self, 'OKX_CONFIG'):
                 # 配置OKX交易所连接
-                self.exchange = ccxt.okx({
-                    'apiKey': self.OKX_CONFIG['api_key'],
-                    'secret': self.OKX_CONFIG['secret'],
-                    'password': self.OKX_CONFIG['passphrase'],
-                    'timeout': self.OKX_CONFIG.get('timeout', 30000),
-                    'enableRateLimit': True,
-                    'options': {
-                        'defaultType': 'spot'  # 默认使用现货市场
-                    }
-                })
+                self.exchange = ccxt.okx({'apiKey': self.OKX_CONFIG['api_key'], 'secret': self.OKX_CONFIG['secret'], 'password': self.OKX_CONFIG['passphrase'], 'timeout': self.OKX_CONFIG.get('timeout', 30000), 'enableRateLimit': True, 'options': {'defaultType': 'spot'}})
             else:
                 raise AttributeError("子类必须定义OKX_CONFIG属性")
             
@@ -103,10 +91,8 @@ class BaseStrategy(abc.ABC):
     @abc.abstractmethod
     def save_trade_signals(self, opportunities: List[Any]) -> Optional[str]:
         """保存交易信号到文件，并发送到API
-        
         参数:
             opportunities: 交易机会列表，支持不同类型的信号对象
-        
         返回:
             生成的文件路径，如果没有信号则返回None
         """
@@ -115,11 +101,9 @@ class BaseStrategy(abc.ABC):
     @abc.abstractmethod
     def analyze_positions(self, current_positions: List[Dict[str, Any]], opportunities: List[Any]) -> List[Dict[str, Any]]:
         """分析当前持仓并筛选出需要关注的持仓
-        
         参数:
             current_positions: 当前持仓列表
             opportunities: 交易机会列表
-        
         返回:
             需要关注的持仓列表
         """
@@ -127,10 +111,8 @@ class BaseStrategy(abc.ABC):
         
     def save_trade_signals(self, opportunities: List[Any]) -> Optional[str]:
         """保存交易信号到文件，并发送到API
-        
         参数:
             opportunities: 交易机会列表，支持不同类型的信号对象
-        
         返回:
             生成的文件路径，如果没有信号则返回None
         """
@@ -158,19 +140,10 @@ class BaseStrategy(abc.ABC):
             filename = f"{signal_dir}/trade_signals_{timestamp}.txt"
             
             with open(filename, 'w', encoding='utf-8') as f:
-                f.write("=" * 80 + "\n")
-                f.write("📊 交易信号记录\n")
-                f.write("=" * 80 + "\n")
-                f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"记录信号: {len(trade_signals)} 个\n")
-                f.write(f"策略名称: {self.get_name()}\n")
-                f.write("=" * 80 + "\n\n")
+                f.write("=" * 80 + "\n📊 交易信号记录\n" + "=" * 80 + f"\n记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n记录信号: {len(trade_signals)} 个\n策略名称: {self.get_name()}\n" + "=" * 80 + "\n\n")
                 
                 for i, signal in enumerate(trade_signals, 1):
-                    f.write(f"【信号 {i}】 {signal.symbol}\n")
-                    f.write("-" * 60 + "\n")
-                    f.write(f"操作: {signal.overall_action}\n")
-                    f.write(f"评分: {signal.total_score:.3f}\n")
+                    f.write(f"【信号 {i}】 {signal.symbol}\n{'-' * 60}\n操作: {signal.overall_action}\n评分: {signal.total_score:.3f}\n")
                     
                     # 尝试获取额外信息，如果存在
                     if hasattr(signal, 'entry_price'):
@@ -194,7 +167,6 @@ class BaseStrategy(abc.ABC):
         
     def _save_trade_signals(self, opportunities: List[Any]):
         """保存交易信号到文件和Redis
-     
         参数:
             opportunities: 交易机会列表
         """
@@ -211,27 +183,12 @@ class BaseStrategy(abc.ABC):
             # 创建信号数据列表
             signals_data = []
             for opportunity in opportunities:
-                signal_data = {
-                    'symbol': getattr(opportunity, 'symbol', '未知'),
-                    'timestamp': datetime.now().isoformat(),
-                    'strategy': self.get_name(),
-                    'overall_action': getattr(opportunity, 'overall_action', '未知'),
-                    'confidence_level': getattr(opportunity, 'confidence_level', '未知'),
-                    'total_score': getattr(opportunity, 'total_score', 0),
-                    'entry_price': getattr(opportunity, 'entry_price', 0),
-                    'stop_loss': getattr(opportunity, 'stop_loss', 0),
-                    'take_profit': getattr(opportunity, 'take_profit', 0),
-                    'timeframe_scores': {}
-                }
+                signal_data = {'symbol': getattr(opportunity, 'symbol', '未知'), 'timestamp': datetime.now().isoformat(), 'strategy': self.get_name(), 'overall_action': getattr(opportunity, 'overall_action', '未知'), 'confidence_level': getattr(opportunity, 'confidence_level', '未知'), 'total_score': getattr(opportunity, 'total_score', 0), 'entry_price': getattr(opportunity, 'entry_price', 0), 'stop_loss': getattr(opportunity, 'stop_loss', 0), 'take_profit': getattr(opportunity, 'take_profit', 0), 'timeframe_scores': {}}
                 
                 # 添加各时间框架的信号和分数（如果有）
                 if hasattr(opportunity, 'timeframe_signals'):
                     for tf, signal in opportunity.timeframe_signals.items():
-                        signal_data['timeframe_scores'][tf] = {
-                            'signal': getattr(signal, 'signal', 0),
-                            'score': getattr(signal, 'score', 0),
-                            'action': getattr(signal, 'action', 'unknown')
-                        }
+                        signal_data['timeframe_scores'][tf] = {'signal': getattr(signal, 'signal', 0),'score': getattr(signal, 'score', 0),'action': getattr(signal, 'action', 'unknown')}
                 
                 signals_data.append(signal_data)
             
@@ -276,10 +233,8 @@ class BaseStrategy(abc.ABC):
         
     def save_positions_needing_attention(self, positions: List[Dict[str, Any]]) -> str:
         """保存需要关注的持仓信息
-        
         参数:
             positions: 需要关注的持仓列表
-        
         返回:
             生成的文件路径
         """
@@ -295,39 +250,22 @@ class BaseStrategy(abc.ABC):
         filename = f"{attention_dir}/positions_needing_attention_{timestamp}.txt"
         
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("=" * 80 + "\n")
-            f.write("⚠️  需要关注的持仓记录\n")
-            f.write("=" * 80 + "\n")
-            f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"记录持仓: {len(positions)} 个\n")
-            f.write(f"策略名称: {self.get_name()}\n")
-            f.write("=" * 80 + "\n\n")
+            f.write("=" * 80 + "\n⚠️  需要关注的持仓记录\n" + "=" * 80 + f"\n记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n记录持仓: {len(positions)} 个\n策略名称: {self.get_name()}\n" + "=" * 80 + "\n\n")
             
             for i, pos in enumerate(positions, 1):
-                f.write(f"【持仓 {i}】 {pos.get('symbol', '未知')}\n")
-                f.write("-" * 60 + "\n")
-                f.write(f"持仓方向: {pos.get('posSide', '未知')}\n")
-                f.write(f"持仓数量: {pos.get('amount', '0')}\n")
-                f.write(f"持仓均价: {pos.get('entry_price', '0.0')}\n")
-                f.write(f"当前价格: {pos.get('current_price', '0.0')}\n")
-                f.write(f"开仓时间: {pos.get('datetime', '未知')}\n")
-                f.write(f"关注原因: {pos.get('reason', '未知')}\n")
-                f.write("\n" + "=" * 80 + "\n\n")
+                f.write(f"【持仓 {i}】 {pos.get('symbol', '未知')}\n{'-' * 60}\n持仓方向: {pos.get('posSide', '未知')}\n持仓数量: {pos.get('amount', '0')}\n持仓均价: {pos.get('entry_price', '0.0')}\n当前价格: {pos.get('current_price', '0.0')}\n开仓时间: {pos.get('datetime', '未知')}\n关注原因: {pos.get('reason', '未知')}\n\n{'=' * 80}\n\n")
         
         self.logger.info(f"已生成需要关注的持仓记录: {filename}")
         return filename
         
     def filter_by_positions(self, trade_signals: List[Any]) -> List[Any]:
         """根据已持仓情况过滤交易信号
-        
         参数:
             trade_signals: 交易信号列表
-        
         返回:
             过滤后的交易信号列表
         """
 
-        
         # 增加日志记录，确认方法被调用
         self.logger.info(f"🔍 filter_by_positions方法被调用，接收到的信号数量: {len(trade_signals)}")
         
@@ -426,10 +364,8 @@ class BaseStrategy(abc.ABC):
 
     def filter_trade_signals(self, opportunities: List[Any]) -> List[Any]:
         """过滤交易信号，根据配置的阈值和规则筛选符合条件的信号
-        
         参数:
             opportunities: 交易机会列表，支持不同类型的信号对象
-        
         返回:
             过滤后的交易信号列表
         """
@@ -465,7 +401,6 @@ class BaseStrategy(abc.ABC):
                             if "买入" not in op.timeframe_signals[signal_trigger_timeframe]:
                                 continue
                   
-                    
                     # 符合交易信号触发周期的条件，继续处理
                         # 添加止损价格过滤
                         if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
@@ -492,7 +427,6 @@ class BaseStrategy(abc.ABC):
                     if hasattr(op, 'timeframe_signals') and isinstance(op.timeframe_signals, dict):
                         has_buy_signal = any("买入" in signal for signal in op.timeframe_signals.values())
                   
-                      
                     if has_buy_signal:
                         self.logger.info(f"{op.symbol} 卖出信号因任一周期有买入信号而被过滤掉")
                         continue
@@ -507,7 +441,6 @@ class BaseStrategy(abc.ABC):
                             if "卖出" not in op.timeframe_signals[signal_trigger_timeframe]:
                                 continue
                 
-                    
                     # 符合交易信号触发周期的条件，继续处理
                         # 添加止损价格过滤
                         if hasattr(op, 'entry_price') and hasattr(op, 'stop_loss'):
@@ -528,10 +461,8 @@ class BaseStrategy(abc.ABC):
 
     def save_multi_timeframe_analysis(self, opportunities: List[Any]) -> Optional[str]:
         """生成多时间框架分析报告，格式符合report_viewer_python的解析要求
-        
         参数:
             opportunities: 交易机会列表，支持不同类型的信号对象
-        
         返回:
             生成的文件路径，如果没有信号则返回None
         """
@@ -566,14 +497,7 @@ class BaseStrategy(abc.ABC):
         
         with open(filename, 'w', encoding='utf-8') as f:
             # 写入报告头部
-            f.write("=" * 80 + "\n")
-            f.write("📊 多时间框架专业分析报告\n")
-            f.write("=" * 80 + "\n")
-            f.write(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"时间框架维度: 周线→日线→4小时→1小时→15分钟\n")
-            f.write(f"发现机会: {len(all_opportunities)}\n")
-            f.write(f"策略名称: {self.get_name()}\n")
-            f.write("=" * 80 + "\n\n")
+            f.write("=" * 80 + "\n📊 多时间框架专业分析报告\n" + "=" * 80 + f"\n分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n时间框架维度: 周线→日线→4小时→1小时→15分钟\n发现机会: {len(all_opportunities)}\n策略名称: {self.get_name()}\n" + "=" * 80 + "\n\n")
             
             # 写入每个交易机会
             for i, opportunity in enumerate(all_opportunities, 1):
@@ -603,29 +527,7 @@ class BaseStrategy(abc.ABC):
                 reasoning = getattr(opportunity, 'reasoning', [])
                 reasoning_text = '; '.join(reasoning) if isinstance(reasoning, list) else str(reasoning)
                 
-                # 写入交易机会信息
-                f.write(f"【机会 {i}】\n")
-                f.write("-" * 60 + "\n")
-                f.write(f"交易对: {symbol}\n")
-                f.write(f"综合建议: {overall_action}\n")
-                f.write(f"信心等级: {confidence_level}\n")
-                f.write(f"总评分: {total_score:.3f}\n")
-                f.write(f"当前价格: {entry_price:.6f}\n")
-                
-                # 写入多时间框架分析
-                f.write(f"周线趋势: {weekly_trend}\n")
-                f.write(f"日线趋势: {daily_trend}\n")
-                f.write(f"4小时信号: {h4_signal}\n")
-                f.write(f"1小时信号: {h1_signal}\n")
-                f.write(f"15分钟信号: {m15_signal}\n")
-                
-                # 写入目标价格和止损价格
-                f.write(f"短期目标: {target_short:.6f}\n")
-                f.write(f"止损价格: {stop_loss:.6f}\n")
-                
-                # 写入分析依据
-                f.write(f"分析依据: {reasoning_text}\n")
-                f.write("\n" + "=" * 80 + "\n\n")
+                f.write(f"【机会 {i}】\n" + "-" * 60 + "\n" + f"交易对: {symbol}\n" + f"综合建议: {overall_action}\n" + f"信心等级: {confidence_level}\n" + f"总评分: {total_score:.3f}\n" + f"当前价格: {entry_price:.6f}\n" + f"周线趋势: {weekly_trend}\n" + f"日线趋势: {daily_trend}\n" + f"4小时信号: {h4_signal}\n" + f"1小时信号: {h1_signal}\n" + f"15分钟信号: {m15_signal}\n" + f"短期目标: {target_short:.6f}\n" + f"止损价格: {stop_loss:.6f}\n" + f"分析依据: {reasoning_text}\n" + "\n" + "=" * 80 + "\n\n")
         
         self.logger.info(f"✅ 多时间框架分析报告已保存至: {filename}")
         return filename

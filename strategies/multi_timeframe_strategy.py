@@ -27,8 +27,7 @@ OKX_CONFIG = {
     'api_key': "e890514f-0371-48b2-90be-0a964e810020",
     'secret': "F201E388F664BC205FF1D6AC6B3F1C5E",
     'passphrase': "Bianhao8@",
-    'sandbox': False,  # True=测试环境, False=正式环境
-    'timeout': 30000,
+    'sandbox': False,'timeout': 30000,
 }
 
 # 策略配置 - 每个策略使用独立配置
@@ -88,22 +87,7 @@ from config import REDIS_CONFIG
 # 动态创建MultiTimeframeSignal类
 def create_multi_timeframe_signal_class():
     # 先定义所有非默认参数
-    non_default_fields = [
-        ('symbol', str),
-        ('weekly_trend', str),
-        ('daily_trend', str),
-        ('overall_action', str),
-        ('confidence_level', str),
-        ('total_score', float),
-        ('entry_price', float),
-        ('target_short', float),
-        ('target_medium', float),
-        ('target_long', float),
-        ('stop_loss', float),
-        ('atr_one', float),
-        ('reasoning', List[str]),
-        ('timestamp', datetime)
-    ]
+    non_default_fields = [('symbol', str), ('weekly_trend', str),('daily_trend', str),('overall_action', str), ('confidence_level', str),('total_score', float),('entry_price', float),('target_short', float), ('target_medium', float), ('target_long', float),('stop_loss', float),('atr_one', float),('reasoning', List[str]),('timestamp', datetime)]
     
     # 从配置中获取所有时间框架作为默认参数字段
     default_fields = []
@@ -133,7 +117,6 @@ def create_multi_timeframe_signal_class():
 # 创建MultiTimeframeSignal类
 MultiTimeframeSignal = create_multi_timeframe_signal_class()
 
-
 class MultiTimeframeStrategy(BaseStrategy):
     """多时间框架分析策略实现"""
     
@@ -143,7 +126,6 @@ class MultiTimeframeStrategy(BaseStrategy):
     def __init__(self, config: Dict[str, Any] = None):
         """
         初始化多时间框架策略
-        
         Args:
             config: 策略配置参数，如果为None则使用默认的TRADING_CONFIG
         """
@@ -264,28 +246,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             for timeframe in TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {}).keys():
                 timeframe_signals[timeframe] = signals.get(timeframe, '观望')
             
-            # 过滤信号应该移动到这里
-
-            return MultiTimeframeSignal(
-                symbol=symbol,
-                weekly_trend="观望",  # 默认值，不再使用
-                daily_trend="观望",   # 默认值，不再使用
-                h4_signal=signals.get('4h', '观望'),
-                h1_signal=signals.get('1h', '观望'),
-                m15_signal=signals.get('15m', '观望'),
-                timeframe_signals=timeframe_signals,
-                overall_action=overall_action,
-                confidence_level=confidence,
-                total_score=total_score,
-                entry_price=current_price,
-                target_short=target_short,
-                target_medium=target_medium,
-                target_long=target_long,
-                stop_loss=stop_loss,
-                atr_one=atr_one,
-                reasoning=reasoning,
-                timestamp=datetime.now()
-            )
+            return MultiTimeframeSignal(symbol=symbol, weekly_trend="观望", daily_trend="观望", h4_signal=signals.get('4h', '观望'), h1_signal=signals.get('1h', '观望'), m15_signal=signals.get('15m', '观望'), timeframe_signals=timeframe_signals, overall_action=overall_action, confidence_level=confidence, total_score=total_score, entry_price=current_price, target_short=target_short, target_medium=target_medium, target_long=target_long, stop_loss=stop_loss, atr_one=atr_one, reasoning=reasoning, timestamp=datetime.now())
         
         except Exception as e:
             # 实际使用时应该记录日志
@@ -313,7 +274,6 @@ class MultiTimeframeStrategy(BaseStrategy):
             score += calculate_rsi_score(df, timeframe)
             score += calculate_volume_score(df)
         
-        
         # 根据时间框架调整权重 - 移除1w和1d的特殊处理
         if timeframe in ['5m', '15m']:
             score *= 0.8  # 短期时间框架权重较低
@@ -336,22 +296,15 @@ class MultiTimeframeStrategy(BaseStrategy):
     def get_required_timeframes(self) -> Dict[str, int]:
         """
         获取策略所需的时间框架和数据长度
-        
         Returns:
             字典，键为时间框架名称，值为所需数据长度
         """
-        return TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {
-            '4h': 168,   # 4小时
-            '1h': 168,   # 1小时
-            '15m': 168   # 15分钟
-        })
+        return TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {'4h': 168,'1h': 168,'15m': 168})
     
     def save_trade_signals(self, opportunities: List[Any]) -> Optional[str]:
         """保存交易信号到文件，并发送到API
-        
         参数:
             opportunities: 交易机会列表，支持不同类型的信号对象
-        
         返回:
             生成的文件路径，如果没有信号则返回None
         """
@@ -372,25 +325,9 @@ class MultiTimeframeStrategy(BaseStrategy):
             filename = f"{signal_dir}/trade_signals_{timestamp}.txt"
             
             with open(filename, 'w', encoding='utf-8') as f:
-                f.write("=" * 80 + "\n")
-                f.write("📊 交易信号记录\n")
-                f.write("=" * 80 + "\n")
-                f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"记录信号: {len(trade_signals)} 个\n")
-                f.write(f"策略名称: {self.get_name()}\n")
-                f.write("=" * 80 + "\n\n")
-                
+                f.write("=" * 80 + "\n📊 交易信号记录\n" + "=" * 80 + f"\n记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n记录信号: {len(trade_signals)} 个\n策略名称: {self.get_name()}\n" + "=" * 80 + "\n\n")
                 for i, signal in enumerate(trade_signals, 1):
-                    f.write(f"【信号 {i}】 {signal.symbol}\n")
-                    f.write("-" * 60 + "\n")
-                    f.write(f"操作: {signal.overall_action}\n")
-                    f.write(f"评分: {signal.total_score:.3f}\n")
-                    f.write(f"当前价格: {signal.entry_price:.6f} USDT\n")
-                    f.write(f"短期目标 (1.5倍ATR): {signal.target_short:.6f} USDT\n")
-                    f.write(f"止损价格 (1倍ATR反向价格): {signal.stop_loss:.6f} USDT\n")
-                    f.write(f"时间戳: {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write(f"分析依据: {'; '.join(signal.reasoning)}\n")
-                    f.write("\n" + "=" * 80 + "\n\n")
+                    f.write(f"【信号 {i}】 {signal.symbol}\n" + "-" * 60 + "\n" + f"操作: {signal.overall_action}\n" + f"评分: {signal.total_score:.3f}\n" + f"当前价格: {signal.entry_price:.6f} USDT\n" + f"短期目标 (1.5倍ATR): {signal.target_short:.6f} USDT\n" + f"止损价格 (1倍ATR反向价格): {signal.stop_loss:.6f} USDT\n" + f"时间戳: {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')}\n" + f"分析依据: {'; '.join(signal.reasoning)}\n" + "\n" + "=" * 80 + "\n\n")
             
             # 发送HTTP POST请求到指定API
             for signal in trade_signals:
@@ -398,16 +335,11 @@ class MultiTimeframeStrategy(BaseStrategy):
                     # 格式化name参数：从KAITO/USDT转换为KAITO（去掉-USDT后缀）
                     name = signal.symbol.replace('/', '-').replace(':USDT', '')
                     
-                    # 使用lib2.py中的send_trading_signal_to_api方法发送交易信号，传入LOSS参数
-                    # 从配置中获取LOSS值，如果不存在则使用默认值1
                     loss_value = self.config.get('LOSS', 1)
                     send_trading_signal_to_api(signal, name, logger, LOSS=loss_value)  
                 except Exception as e:
                     logger.error(f"发送交易信号到API时发生错误: {e}")
-                     
             return filename
-        
-        # 没有交易信号时返回None
         return None
         
     def filter_by_positions(self, symbols: List[Any]) -> List[Any]:
@@ -600,14 +532,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         
         with open(filename, 'w', encoding='utf-8') as f:
             # 写入报告头部
-            f.write("=" * 80 + "\n")
-            f.write("📊 多时间框架专业分析报告\n")
-            f.write("=" * 80 + "\n")
-            f.write(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"时间框架维度: 周线→日线→4小时→1小时→15分钟\n")
-            f.write(f"发现机会: {len(all_opportunities)}\n")
-            f.write(f"策略名称: {self.get_name()}\n")
-            f.write("=" * 80 + "\n\n")
+            f.write("=" * 80 + "\n" + "📊 多时间框架专业分析报告\n" + "=" * 80 + "\n" + f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n" + f"时间框架维度: 周线→日线→4小时→1小时→15分钟\n" + f"发现机会: {len(all_opportunities)}\n" + f"策略名称: {self.get_name()}\n" + "=" * 80 + "\n\n")
             
             # 写入每个交易机会
             for i, opportunity in enumerate(all_opportunities, 1):
@@ -638,28 +563,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                 reasoning_text = '; '.join(reasoning) if isinstance(reasoning, list) else str(reasoning)
                 
                 # 写入交易机会信息
-                f.write(f"【机会 {i}】\n")
-                f.write("-" * 60 + "\n")
-                f.write(f"交易对: {symbol}\n")
-                f.write(f"综合建议: {overall_action}\n")
-                f.write(f"信心等级: {confidence_level}\n")
-                f.write(f"总评分: {total_score:.3f}\n")
-                f.write(f"当前价格: {entry_price:.6f}\n")
-                
-                # 写入多时间框架分析
-                f.write(f"周线趋势: {weekly_trend}\n")
-                f.write(f"日线趋势: {daily_trend}\n")
-                f.write(f"4小时信号: {h4_signal}\n")
-                f.write(f"1小时信号: {h1_signal}\n")
-                f.write(f"15分钟信号: {m15_signal}\n")
-                
-                # 写入目标价格和止损价格
-                f.write(f"短期目标: {target_short:.6f}\n")
-                f.write(f"止损价格: {stop_loss:.6f}\n")
-                
-                # 写入分析依据
-                f.write(f"分析依据: {reasoning_text}\n")
-                f.write("\n" + "=" * 80 + "\n\n")
+                f.write(f"【机会 {i}】\n" + "-" * 60 + "\n" + f"交易对: {symbol}\n" + f"综合建议: {overall_action}\n" + f"信心等级: {confidence_level}\n" + f"总评分: {total_score:.3f}\n" + f"当前价格: {entry_price:.6f}\n" + f"周线趋势: {weekly_trend}\n" + f"日线趋势: {daily_trend}\n" + f"4小时信号: {h4_signal}\n" + f"1小时信号: {h1_signal}\n" + f"15分钟信号: {m15_signal}\n" + f"短期目标: {target_short:.6f}\n" + f"止损价格: {stop_loss:.6f}\n" + f"分析依据: {reasoning_text}\n" + "\n" + "=" * 80 + "\n\n")
         
         logger.info(f"✅ 多时间框架分析报告已保存至: {filename}")
         return filename
@@ -675,23 +579,9 @@ class MultiTimeframeStrategy(BaseStrategy):
         filename = f"{attention_dir}/positions_needing_attention_{timestamp}.txt"
         
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("=" * 80 + "\n")
-            f.write("⚠️  需要关注的持仓记录\n")
-            f.write("=" * 80 + "\n")
-            f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"记录持仓: {len(positions)} 个\n")
-            f.write(f"策略名称: {self.get_name()}\n")
-            f.write("=" * 80 + "\n\n")
+            f.write("=" * 80 + "\n⚠️  需要关注的持仓记录\n" + "=" * 80 + f"\n记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n记录持仓: {len(positions)} 个\n策略名称: {self.get_name()}\n" + "=" * 80 + "\n\n")
             
             for i, pos in enumerate(positions, 1):
-                f.write(f"【持仓 {i}】 {pos.get('symbol', '未知')}\n")
-                f.write("-" * 60 + "\n")
-                f.write(f"持仓方向: {pos.get('posSide', '未知')}\n")
-                f.write(f"持仓数量: {pos.get('amount', '0')}\n")
-                f.write(f"持仓均价: {pos.get('entry_price', '0.0')}\n")
-                f.write(f"当前价格: {pos.get('current_price', '0.0')}\n")
-                f.write(f"开仓时间: {pos.get('datetime', '未知')}\n")
-                f.write(f"关注原因: {pos.get('reason', '未知')}\n")
-                f.write("\n" + "=" * 80 + "\n\n")
+                f.write(f"【持仓 {i}】 {pos.get('symbol', '未知')}\n" + "-" * 60 + "\n" + f"持仓方向: {pos.get('posSide', '未知')}\n" + f"持仓数量: {pos.get('amount', '0')}\n" + f"持仓均价: {pos.get('entry_price', '0.0')}\n" + f"当前价格: {pos.get('current_price', '0.0')}\n" + f"开仓时间: {pos.get('datetime', '未知')}\n" + f"关注原因: {pos.get('reason', '未知')}\n" + "\n" + "=" * 80 + "\n\n")
         
         return filename
