@@ -77,7 +77,6 @@ from routes.okx_routes import okx_bp
 from routes.config_routes import config_bp
 from routes.leverage_routes import leverage_bp
 
-
 # 导入控制器
 from control.report_control import ReportControl
 from control.okx_control import OKXControl
@@ -98,9 +97,7 @@ def init_okx_exchange():
         has_key = bool(config.okx_api_key)
         has_secret = bool(config.okx_api_secret)
         has_passphrase = bool(config.okx_api_passphrase)
-        
-        print(f"API密钥配置状态: key={has_key}, secret={has_secret}, passphrase={has_passphrase}")
-        print(f"API密钥长度: key={len(config.okx_api_key) if has_key else 0}, secret={len(config.okx_api_secret) if has_secret else 0}, passphrase={len(config.okx_api_passphrase) if has_passphrase else 0}")
+        print(f"API密钥配置状态: key={has_key}")
         
         if not has_key or not has_secret or not has_passphrase:
             missing = []
@@ -219,7 +216,6 @@ def init_okx_exchange():
 # 初始化OKX连接
 init_okx_exchange()
 
-
 # 初始化全局控制器实例
 global_report_control = ReportControl()
 global_okx_control = OKXControl()
@@ -230,11 +226,7 @@ global_auth_control = AuthControl()
 global_okx_control.set_api_clients(okx_public_api=okx_public_api, okx_account_api=okx_account_api, okx_official_api=okx_official_api, okx_exchange=okx_exchange)
 print("=== 控制器API实例注入完成 ===")
 
-
-
 # OKX相关功能已合并到OKXControl类中
-
-
 def get_okx_balance():
     """获取OKX交易所的账户余额数据"""
     return global_okx_control.get_okx_balance()
@@ -302,14 +294,8 @@ def index():
     buy_count = len([op for op in report_data['opportunities'] if '买入' in op['action']])
     sell_count = len([op for op in report_data['opportunities'] if '卖出' in op['action']])
     watch_count = len([op for op in report_data['opportunities'] if '观望' in op['action']])
-    
     # 渲染模板并传递数据
-    return render_template('index.html', 
-                          report_data=report_data,
-                          buy_count=buy_count,
-                          sell_count=sell_count,
-                          watch_count=watch_count,
-                          now=datetime.now())
+    return render_template('index.html', report_data=report_data,buy_count=buy_count,sell_count=sell_count,watch_count=watch_count,now=datetime.now())
 
 
 @app.route('/api/data')
@@ -331,11 +317,7 @@ def filter_data():
     report_path = request.args.get('file', DEFAULT_REPORT_PATH)
     
     # 使用report_control中的筛选方法
-    filtered_data = global_report_control.filter_opportunities(
-        file_path=report_path,
-        filter_type=filter_type,
-        search_term=search_term
-    )
+    filtered_data = global_report_control.filter_opportunities(file_path=report_path, filter_type=filter_type,search_term=search_term)
     
     # 返回过滤后的数据
     return jsonify(filtered_data)
@@ -360,20 +342,13 @@ def api_balance():
         # 获取余额数据
         balance_data = get_okx_balance()
         print("余额数据获取成功")
-        return jsonify({
-            'success': True,
-            'data': balance_data
-        })
+        return jsonify({'success': True,'data': balance_data})
     except Exception as e:
         print(f"获取余额数据时发生错误: {e}")
         # 打印更详细的错误信息
         import traceback
         print(f"错误堆栈:\n{traceback.format_exc()}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'errorType': type(e).__name__
-        })
+        return jsonify({'success': False, 'error': str(e),'errorType': type(e).__name__})
 
 
 # 仓位API路由已在文件末尾定义
@@ -398,20 +373,13 @@ def api_orders():
         # 获取挂单数据
         orders_data = get_okx_open_orders()
         print("挂单数据获取成功")
-        return jsonify({
-            'success': True,
-            'data': orders_data
-        })
+        return jsonify({'success': True,'data': orders_data})
     except Exception as e:
         print(f"获取挂单数据时发生错误: {e}")
         # 打印更详细的错误信息
         import traceback
         print(f"错误堆栈:\n{traceback.format_exc()}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'errorType': type(e).__name__
-        })
+        return jsonify({'success': False,'error': str(e),'errorType': type(e).__name__})
 
 
 @app.route('/api/cancel_order', methods=['POST'])
@@ -426,10 +394,7 @@ def api_cancel_order():
         symbol = data.get('symbol')
         
         if not order_id or not symbol:
-            return jsonify({
-                'success': False,
-                'error': '缺少必要参数: order_id, symbol'
-            })
+            return jsonify({'success': False, 'error': '缺少必要参数: order_id, symbol'})
         
         # 打印请求信息
         print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -440,26 +405,16 @@ def api_cancel_order():
         
         if result:
             print("订单取消成功")
-            return jsonify({
-                'success': True,
-                'message': '订单取消成功'
-            })
+            return jsonify({'success': True,'message': '订单取消成功'})
         else:
             print("订单取消失败")
-            return jsonify({
-                'success': False,
-                'error': '订单取消失败'
-            })
+            return jsonify({'success': False,'error': '订单取消失败'})
     except Exception as e:
         print(f"取消订单时发生错误: {e}")
         # 打印更详细的错误信息
         import traceback
         print(f"错误堆栈:\n{traceback.format_exc()}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'errorType': type(e).__name__
-        })
+        return jsonify({'success': False,'error': str(e),'errorType': type(e).__name__})
 
 
 @app.route('/api/modify_order', methods=['POST'])
@@ -476,20 +431,14 @@ def api_modify_order():
         new_amount = data.get('new_amount')
         
         if not order_id or not symbol or new_price is None or new_amount is None:
-            return jsonify({
-                'success': False,
-                'error': '缺少必要参数: order_id, symbol, new_price, new_amount'
-            })
+            return jsonify({'success': False,'error': '缺少必要参数: order_id, symbol, new_price, new_amount'})
         
         # 转换价格和数量为浮点数
         try:
             new_price = float(new_price)
             new_amount = float(new_amount)
         except ValueError:
-            return jsonify({
-                'success': False,
-                'error': '价格和数量必须为数字'
-            })
+            return jsonify({'success': False,'error': '价格和数量必须为数字'})
         
         # 打印请求信息
         print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -499,21 +448,11 @@ def api_modify_order():
         result = modify_okx_order(order_id, symbol, new_price, new_amount)
         
         if result:
-            return jsonify({
-                'success': True,
-                'message': '订单修改成功'
-            })
+            return jsonify({'success': True,'message': '订单修改成功'})
         else:
-            return jsonify({
-                'success': False,
-                'error': '订单修改失败'
-            })
+            return jsonify({'success': False,'error': '订单修改失败'})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'errorType': type(e).__name__
-        })
+        return jsonify({'success': False,'error': str(e),'errorType': type(e).__name__})
 
 
 if __name__ == '__main__':
@@ -525,20 +464,7 @@ if __name__ == '__main__':
         local_ip = '127.0.0.1'
     
     # 打印启动信息
-    print('=' * 80)
-    print('多时间框架分析报告查看器 - Python版')
-    print('=' * 80)
-    print(f'本地访问地址: http://127.0.0.1:5000')
     print(f'局域网访问地址: http://{local_ip}:5000')
-    print('')
-    print('页面导航:')
-    print('  - 多时间框架分析报告: /')
-    print('  - OKX余额查询: /balance')
-    print('')
-    print('请在浏览器中打开上述地址查看报告和余额')
-    print('手机查看请确保与电脑连接同一Wi-Fi网络，然后访问局域网地址')
-    print('=' * 80)
-    
 # ====================== 新增功能：止盈止损订单、当前仓位和历史仓位 ======================
 
 
@@ -554,10 +480,7 @@ def api_cancel_stop_order():
         symbol = data.get('symbol')
         
         if not order_id or not symbol:
-            return jsonify({
-                'success': False,
-                'error': '缺少必要参数: order_id, symbol'
-            })
+            return jsonify({'success': False,'error': '缺少必要参数: order_id, symbol' })
         
         # 打印请求信息
         print(f"请求时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -589,15 +512,8 @@ def api_cancel_stop_order():
             'errorType': type(e).__name__
         })
 
-
-
-
-
-
-
 # 导入合约工具函数 - 供后续可能使用
 from lib.tool import contract_utils
-
 
 def get_okx_history_positions():
     """获取OKX交易所的历史仓位数据，使用positions-history接口"""
@@ -751,19 +667,7 @@ def get_okx_history_positions():
                     
                     # 只有当金额大于0时才添加到结果中
                     if amount > 0:
-                        formatted_position = {
-                            'symbol': symbol,
-                            'type': ord_type,
-                            'amount': amount,
-                            'entry_price': entry_price,
-                            'exit_price': exit_price,
-                            'profit': profit,
-                            'profit_percent': profit_percent,
-                            'entry_datetime': entry_datetime,
-                            'exit_datetime': exit_datetime,
-                            'cost': cost,
-                            'posSide': pos_side  # 添加仓位方向信息
-                        }
+                        formatted_position = {'symbol': symbol, 'type': ord_type, 'amount': amount, 'entry_price': entry_price, 'exit_price': exit_price, 'profit': profit, 'profit_percent': profit_percent, 'entry_datetime': entry_datetime, 'exit_datetime': exit_datetime, 'cost': cost, 'posSide': pos_side}  #
                         formatted_positions.append(formatted_position)
                         # print(f"成功格式化一条历史仓位数据: {formatted_position}")
                     else:
@@ -787,9 +691,8 @@ def get_okx_history_positions():
                         except:
                             profit = 0
                     
-                    # 使用合约工具计算正确的成本
-                    cost = contract_utils.calculate_cost(amount, entry_price, symbol) if 'contract_utils' in globals() else amount * entry_price
-                    profit_percent = (profit / cost * 100) if cost > 0 else 0
+                    # 简化计算利润百分比，不再依赖成本
+                    profit_percent = 0 if entry_price == 0 else (profit / (amount * entry_price) * 100)
                     
                     # 获取订单的开仓和平仓时间
                     cTime = int(position.get('cTime', 0))  # 创建时间
@@ -797,19 +700,7 @@ def get_okx_history_positions():
                     entry_datetime = datetime.fromtimestamp(cTime / 1000).strftime('%Y-%m-%d %H:%M:%S') if cTime else ''
                     exit_datetime = datetime.fromtimestamp(uTime / 1000).strftime('%Y-%m-%d %H:%M:%S') if uTime else ''
                     
-                    formatted_position = {
-                        'symbol': symbol,
-                        'type': position.get('ordType', 'spot'),
-                        'amount': amount,
-                        'entry_price': entry_price,
-                        # 优先使用closeAvgPx作为出场价格
-                        'exit_price': float(position.get('closeAvgPx', position.get('avgPx', 0))) if position.get('avgPx') or position.get('closeAvgPx') else entry_price,
-                        'profit': profit,
-                        'profit_percent': profit_percent,
-                        'entry_datetime': entry_datetime,
-                        'exit_datetime': exit_datetime,
-                        'cost': cost
-                    }
+                    formatted_position = {'symbol': symbol, 'type': position.get('ordType', 'spot'), 'amount': amount, 'entry_price': entry_price, 'exit_price': float(position.get('closeAvgPx', position.get('avgPx', 0))) if position.get('avgPx') or position.get('closeAvgPx') else entry_price, 'profit': profit, 'profit_percent': profit_percent, 'entry_datetime': entry_datetime, 'exit_datetime': exit_datetime}
                     formatted_positions.append(formatted_position)
                     print(f"成功格式化一条历史仓位数据: {formatted_position}")
                 # 处理ccxt返回的数据格式（备选方案）
@@ -824,27 +715,13 @@ def get_okx_history_positions():
                     
                     # 计算利润
                     profit = 0
-                    
-                    # 使用合约工具计算正确的成本
-                    cost = contract_utils.calculate_cost(amount, entry_price, symbol) if 'contract_utils' in globals() else amount * entry_price
                     profit_percent = 0
                     
                     # 获取订单的开仓和平仓时间
                     entry_datetime = datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
                     exit_datetime = datetime.fromtimestamp(position.get('timestamp', 0) / 1000).strftime('%Y-%m-%d %H:%M:%S') if position.get('timestamp') else ''
                     
-                    formatted_position = {
-                        'symbol': symbol,
-                        'type': position.get('type', 'spot'),
-                        'amount': amount,
-                        'entry_price': entry_price,
-                        'exit_price': entry_price,
-                        'profit': profit,
-                        'profit_percent': profit_percent,
-                        'entry_datetime': entry_datetime,
-                        'exit_datetime': exit_datetime,
-                        'cost': cost
-                    }
+                    formatted_position = {'symbol': symbol, 'type': position.get('type', 'spot'), 'amount': amount, 'entry_price': entry_price, 'exit_price': entry_price, 'profit': profit, 'profit_percent': profit_percent, 'entry_datetime': entry_datetime, 'exit_datetime': exit_datetime}
                     formatted_positions.append(formatted_position)
                     print(f"成功格式化一条历史仓位数据: {formatted_position}")
                 else:
@@ -1026,19 +903,7 @@ def convert_closed_orders_to_trades(closed_orders):
                     cost = float(order['price']) * float(order['amount'])
                     
                     # 创建标准交易记录格式
-                    trade = {
-                        'id': order['id'],
-                        'timestamp': order['timestamp'],
-                        'datetime': order.get('datetime', ''),
-                        'symbol': order['symbol'],
-                        'side': order['side'],
-                        'type': order.get('type', 'limit'),
-                        'amount': float(order['amount']),
-                        'price': float(order['price']),
-                        'cost': cost,
-                        'fee': order.get('fee', None),
-                        'info': order.get('info', {})
-                    }
+                    trade = {'id': order['id'], 'timestamp': order['timestamp'], 'datetime': order.get('datetime', ''), 'symbol': order['symbol'], 'side': order['side'], 'type': order.get('type', 'limit'), 'amount': float(order['amount']), 'price': float(order['price']), 'cost': cost, 'fee': order.get('fee', None), 'info': order.get('info', {})}
                     
                     trades.append(trade)
             except Exception as e:
@@ -1055,12 +920,7 @@ def convert_closed_orders_to_trades(closed_orders):
 
 # 将全局API实例注入到控制器中
 global_report_control.default_report_path = DEFAULT_REPORT_PATH
-global_okx_control.set_api_clients(
-    okx_exchange=okx_exchange,
-    okx_official_api=okx_official_api,
-    okx_account_api=okx_account_api,
-    okx_public_api=okx_public_api
-)
+global_okx_control.set_api_clients(okx_exchange=okx_exchange,okx_official_api=okx_official_api,okx_account_api=okx_account_api,okx_public_api=okx_public_api)
 
 # 将控制器实例注入到路由模块
 import routes.report_routes

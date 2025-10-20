@@ -294,10 +294,6 @@
                     ${positionDirection ? `<span class="px-2 py-1 text-xs ml-2 bg-success/10 text-success rounded-full nowrap">${positionDirection}</span>` : ''}
                 </div>
                 <div class="flex flex-col items-end">
-                    <span class="${profitBadgeClass} mb-1 flex items-center">
-                        <i class="fa ${profitBadgeIcon} mr-1"></i>
-                        ${position.profit_percent.toFixed(2)}%
-                    </span>
                     <span class="text-xs text-gray-500 nowrap">${position.exit_datetime}</span>
                 </div>
             </div>
@@ -306,10 +302,6 @@
                 <div class="data-item">
                     <p class="data-label">合约张数</p>
                     <p class="data-value truncate">${position.amount.toFixed(2)}</p>
-                </div>
-                <div class="data-item">
-                    <p class="data-label">持仓成本 (USDT)</p>
-                    <p class="data-value">${position.cost.toFixed(2)}</p>
                 </div>
                 <div class="data-item">
                     <p class="data-label">入场价格</p>
