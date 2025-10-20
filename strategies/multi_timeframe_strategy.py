@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, make_dataclass
 import logging
 import sys
 import ccxt
-from strategies.condition_analyzer import calculate_ema_trend_indicators_and_score, calculate_rsi_score, calculate_volume_score, calculate_rsi_crossover_score
+from strategies.condition_analyzer import calculate_trend_indicators_and_score, calculate_rsi_score, calculate_volume_score, calculate_rsi_crossover_score
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -272,7 +272,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             score += calculate_rsi_crossover_score(df)
         else:
             # 非交易信号触发周期运行其他评分方法
-            score += calculate_ema_trend_indicators_and_score(df, current_price, timeframe)
+            score += calculate_trend_indicators_and_score(df, current_price, timeframe)
             score += calculate_rsi_score(df, timeframe)
             score += calculate_volume_score(df)
         
