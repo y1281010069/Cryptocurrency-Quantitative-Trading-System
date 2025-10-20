@@ -16,7 +16,7 @@ import json
 
 # ===== 配置参数 =====
 # 交易标的配置
-symbols = ["BTC-USDT", "ETH-USDT"]  # 交易对列表
+symbols = ["ARB-USDT"]  # 交易对列表
 
 # 回测时间范围配置
 start_date = datetime(2025, 1, 1)  # 开始日期
@@ -301,20 +301,6 @@ class BacktestEngine:
             filtered_count = original_len - len(df)
             if filtered_count > 0:
                 logger.info(f"过滤掉{filtered_count}条超出时间范围的数据，剩余{len(df)}条")
-            
-            # 保存数据统计信息到文件
-            try:
-                analysis_file = f"{timeframe}_data_analysis.txt"
-                with open(analysis_file, 'w', encoding='utf-8') as f:
-                    f.write(f"{timeframe} 数据统计信息\n")
-                    f.write(f"数据总量: {len(df)} 条\n")
-                    f.write(f"时间范围: {df['datetime'].min()} 至 {df['datetime'].max()}\n")
-                    f.write(f"请求次数: {request_count}\n")  # 正确记录请求次数
-                    f.write(f"\n数据表格:\n")
-                    f.write(df.head(10).to_string())
-                logger.info(f"数据统计信息已保存到 {analysis_file}")
-            except Exception as e:
-                logger.warning(f"保存数据统计信息失败: {str(e)}")
             
             # 保存数据到Excel文件，方便下次读取
             try:
