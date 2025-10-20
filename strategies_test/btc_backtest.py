@@ -16,7 +16,7 @@ import json
 
 # ===== 配置参数 =====
 # 交易标的配置
-symbols = ["ARB-USDT"]  # 交易对列表
+symbols = ["BTC-USDT"]  # 交易对列表
 
 # 回测时间范围配置
 start_date = datetime(2025, 1, 1)  # 开始日期
@@ -525,7 +525,6 @@ class BacktestEngine:
         # 准备回测数据
         if not self.prepare_backtest_data():
             return
-        
         # 以最细粒度的时间框架（15分钟）作为回测的基准
         base_tf = '15m'
         base_df = self.timeframe_data.get(base_tf)
@@ -652,6 +651,11 @@ class BacktestEngine:
             
             # 获取当前价格和时间（优先使用15m时间框架的收盘价和时间戳，以获得更细粒度的日志记录）
             if '15m' in current_data:
+                print("15m")
+                print(current_data['15m']['close'].iloc[-1])
+                print(current_data['15m']['datetime'].iloc[-1])
+                print(current_data['1h']['close'].iloc[-1])
+                print(current_data['1h']['datetime'].iloc[-1])
                 current_price = current_data['15m']['close'].iloc[-1]
                 current_date = current_data['15m']['datetime'].iloc[-1]
             elif '1h' in current_data:
@@ -677,9 +681,9 @@ class BacktestEngine:
             # logger.info(f"  当前价格各时间框架: {', '.join(price_info)}")
             
             #反转current_data的下每个k线的顺序
-            current_data2 = {tf: df.sort_values('datetime', ascending=False).reset_index(drop=True) for tf, df in current_data.items()}
+            # current_data2 = {tf: df.sort_values('datetime', ascending=False).reset_index(drop=True) for tf, df in current_data.items()}
             # 使用策略生成信号
-            signal = self.strategy.analyze(self.symbol, current_data2)
+            signal = self.strategy.analyze(self.symbol, current_data)
 
             # filter_trade_signals 过滤交易信号
             signal = [signal]
@@ -717,10 +721,8 @@ class BacktestEngine:
             # 执行交易（模拟记录，不调用实际API）
             if signal:
                 # 获取15分钟时间框架的信号
-                timeframe_15m_signal = getattr(signal, f'{signal_trigger_timeframe.replace("15m", "m15")}_signal', '未知')
-                
-                # 买入信号且当前无持仓，同时检查15分钟时间框架信号
-                if signal.overall_action == "买入" and self.position == 0 and "买入" in timeframe_15m_signal:
+              
+                if signal.overall_action == "买入" and self.position == 0:
                     # 全仓买入（模拟）
                     self.position = self.capital / current_price  # 多仓为正数
                     self.entry_price = current_price
@@ -748,7 +750,7 @@ class BacktestEngine:
                     logger.info(f"[{current_date}] 模拟买入信号: {current_price:.2f}, 持仓数量: {self.position:.6f}, 信号评分: {signal.total_score:.3f}")
                 
                 # 卖出信号且当前有持仓，同时检查15分钟时间框架信号
-                elif signal.overall_action == "卖出" and self.position > 0 and "卖出" in timeframe_15m_signal:
+                elif signal.overall_action == "卖出" and self.position > 0:
                     # 全仓卖出（模拟）
                     self.capital = self.position * current_price
                     profit = self.capital - self.initial_capital
