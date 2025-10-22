@@ -310,7 +310,6 @@ class MultiTimeframeStrategy(BaseStrategy):
         else:
             # 非交易信号触发周期运行其他评分方法
             score += calculate_ema_trend_indicators_and_score(df, current_price, timeframe)
-            score += calculate_rsi_score(df, timeframe)
             score += calculate_volume_score(df)
         
         
@@ -319,13 +318,13 @@ class MultiTimeframeStrategy(BaseStrategy):
             score *= 0.8  # 短期时间框架权重较低
         
         # 确定信号
-        if score >= 3:
+        if score >= 2:
             action = "强烈买入"
-        elif score >= 1.5:
+        elif score >= 1:
             action = "买入"
-        elif score <= -3:
+        elif score <= -2:
             action = "强烈卖出"
-        elif score <= -1.5:
+        elif score <= -1:
             action = "卖出"
         else:
             action = "观望"
