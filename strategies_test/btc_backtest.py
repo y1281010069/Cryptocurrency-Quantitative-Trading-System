@@ -18,11 +18,11 @@ import importlib
 import inspect
 
 # ===== 配置参数 =====
-# 交易标的配置
-symbols = SYMBOLS  # 从配置文件导入交易对列表
-
 # 导入回测配置
 from backtest_config import START_DATE, END_DATE, STRATEGIES_TO_TEST, SYMBOLS
+
+# 交易标的配置
+symbols = SYMBOLS  # 从配置文件导入交易对列表
 
 # 回测时间范围配置
 start_date = START_DATE  # 开始日期（从配置文件导入）
