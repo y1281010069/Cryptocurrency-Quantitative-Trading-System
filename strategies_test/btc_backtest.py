@@ -59,9 +59,9 @@ def load_strategy_classes(strategies_to_test=None):
         strategies_to_test: 要测试的策略列表，可以是文件名或类名，空列表表示测试所有策略
     
     Returns:
-        list: 策略类列表
+        dict: 策略类到文件名的映射字典
     """
-    strategy_classes = []
+    strategy_class_to_filename = {}
     strategies_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'strategies')
     
     # 确保strategies_to_test是列表类型
@@ -81,7 +81,7 @@ def load_strategy_classes(strategies_to_test=None):
         # 检查strategies目录是否存在
         if not os.path.exists(strategies_dir):
             logger.error(f"策略目录不存在: {strategies_dir}")
-            return strategy_classes
+            return strategy_class_to_filename
         
         # 遍历strategies目录下的所有.py文件
         for filename in os.listdir(strategies_dir):
@@ -112,17 +112,15 @@ def load_strategy_classes(strategies_to_test=None):
                                 # 如果有指定策略列表，并且没有被文件名过滤掉，再检查类名
                                 if not strategies_to_test or obj.__name__ in strategies_to_test or not skip_by_filename:
                                     logger.info(f"找到策略类: {obj.__name__} (来自模块: {module_name})")
-                                    strategy_classes.append(obj)
+                                    strategy_class_to_filename[obj] = module_name
                 except Exception as e:
                     logger.error(f"导入模块 {module_name} 时出错: {str(e)}")
         
-        # 去重
-        strategy_classes = list(set(strategy_classes))
-        logger.info(f"成功加载 {len(strategy_classes)} 个策略类")
+        logger.info(f"成功加载 {len(strategy_class_to_filename)} 个策略类")
     except Exception as e:
         logger.error(f"加载策略类时发生错误: {str(e)}")
     
-    return strategy_classes
+    return strategy_class_to_filename
 
 
 class BacktestEngine:
@@ -1245,27 +1243,27 @@ if __name__ == "__main__":
     logger.info("启动多交易对多策略回测系统")
     logger.info("注意: 本回测使用模拟记录方式，不会调用实际的OKX仓位API")
     
-    # 加载策略类
-    strategy_classes = load_strategy_classes(strategies_to_test)
+    # 加载策略类及其文件名映射
+    strategy_class_to_filename = load_strategy_classes(strategies_to_test)
     
-    if not strategy_classes:
+    if not strategy_class_to_filename:
         logger.error("未能加载任何策略类，回测无法继续")
         sys.exit(1)
     
     # 遍历每个策略
-    for strategy_class in strategy_classes:
+    for strategy_class, module_name in strategy_class_to_filename.items():
         strategy_name = strategy_class.__name__
-        logger.info(f"\n========== 开始策略回测: {strategy_name} ==========")
+        logger.info(f"\n========== 开始策略回测: {strategy_name} (文件: {module_name}.py) ==========")
         
         # 记录策略回测开始时间
         strategy_backtest_start_time = datetime.now()
         strategy_backtest_start_time_str = strategy_backtest_start_time.strftime("%Y-%m-%d %H:%M:%S")
         
-        # 创建策略报告目录
+        # 创建策略报告目录，使用文件名而不是类名
         reports_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
         strategy_report_dir = os.path.join(
             reports_base_dir, 
-            f"{strategy_name}_{strategy_backtest_start_time.strftime('%Y%m%d_%H%M%S')}"
+            f"{module_name}_{strategy_backtest_start_time.strftime('%Y%m%d_%H%M%S')}"
         )
         os.makedirs(strategy_report_dir, exist_ok=True)
         
@@ -1310,7 +1308,7 @@ if __name__ == "__main__":
         end_datetime_str = end_date.strftime("%Y-%m-%d %H:%M:%S")
         
         generate_summary_report(
-            strategy_name=strategy_name,
+            strategy_name=f"{module_name}.py",
             backtest_start_time=strategy_backtest_start_time_str,
             backtest_end_time=strategy_backtest_end_time_str,
             start_datetime=start_datetime_str,
