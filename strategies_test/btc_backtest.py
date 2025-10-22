@@ -42,10 +42,11 @@ from okx.MarketData import MarketAPI
 # 导入基础策略类
 from strategies.base_strategy import BaseStrategy
 
-# 配置日志
+# 配置日志 - 只输出到控制台，不创建日志文件
 logging.basicConfig(
     level=logging.INFO,  # 设置为DEBUG级别以输出详细的时间框架验证日志
-    format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -1169,14 +1170,7 @@ class BacktestEngine:
 
 
 def setup_logger(log_dir):
-    """设置日志记录器，将日志输出到指定目录"""
-    # 创建detail文件夹
-    detail_dir = os.path.join(log_dir, 'detail')
-    os.makedirs(detail_dir, exist_ok=True)
-    
-    # 配置日志文件
-    log_file = os.path.join(detail_dir, 'backtest.log')
-    
+    """设置日志记录器，只输出到控制台，不创建日志文件"""
     # 获取根日志记录器
     root_logger = logging.getLogger()
     
@@ -1187,21 +1181,16 @@ def setup_logger(log_dir):
     # 设置日志级别
     root_logger.setLevel(logging.INFO)
     
-    # 创建文件处理器
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setLevel(logging.INFO)
-    
     # 创建控制台处理器
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     
     # 设置日志格式
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
-    file_handler.setFormatter(formatter)
+    # 只设置控制台处理器的格式
     console_handler.setFormatter(formatter)
     
-    # 添加处理器到根日志记录器
-    root_logger.addHandler(file_handler)
+    # 只添加控制台处理器到根日志记录器
     root_logger.addHandler(console_handler)
     
     # 更新全局logger变量
