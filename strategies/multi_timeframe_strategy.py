@@ -136,6 +136,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             config = TRADING_CONFIG
         
         super().__init__("MultiTimeframeStrategy", config)
+        print("multi_timeframe_strategy init")
         self._init_exchange()
         self.logger = logging.getLogger(__name__)
 

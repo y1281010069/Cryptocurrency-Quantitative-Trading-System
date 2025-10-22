@@ -10,17 +10,27 @@ import pandas as pd
 import numpy as np
 import time
 import time as time_module
+import shutil
 from datetime import datetime, timedelta
 import logging
 import json
+import importlib
+import inspect
 
 # ===== 配置参数 =====
 # 交易标的配置
-symbols = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "ARB-USDT", "LTC-USDT"]  # 交易对列表
+#symbols = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "ARB-USDT", "LTC-USDT"]  # 交易对列表
+symbols = ["BTC-USDT", "ETH-USDT"]  # 交易对列表
 
 # 回测时间范围配置
 start_date = datetime(2025, 1, 1)  # 开始日期
-end_date = start_date + timedelta(days=240)  # 结束日期（开始日期往后240天）
+end_date = start_date + timedelta(days=40)  # 结束日期（开始日期往后240天）
+
+# 策略配置 - 指定要测试的策略，空列表表示测试所有策略
+# 可以填写策略文件名（不含.py后缀）或策略类名
+strategies_to_test = ["multi_timeframe_strategy_ema"]  # 测试所有策略
+# strategies_to_test = ["multi_timeframe_strategy"]  # 只测试指定文件名的策略
+# strategies_to_test = ["MultiTimeframeStrategy"]  # 只测试指定类名的策略
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,8 +39,8 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 
 # 导入OKX市场数据API
 from okx.MarketData import MarketAPI
-# 导入策略类
-from strategies.multi_timeframe_strategy_ema import MultiTimeframeStrategy
+# 导入基础策略类
+from strategies.base_strategy import BaseStrategy
 
 # 配置日志
 logging.basicConfig(
@@ -38,6 +48,80 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def load_strategy_classes(strategies_to_test=None):
+    """
+    动态加载strategies文件夹中的策略类，只加载继承自BaseStrategy的类
+    
+    Args:
+        strategies_to_test: 要测试的策略列表，可以是文件名或类名，空列表表示测试所有策略
+    
+    Returns:
+        list: 策略类列表
+    """
+    strategy_classes = []
+    strategies_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'strategies')
+    
+    # 确保strategies_to_test是列表类型
+    if strategies_to_test is None:
+        strategies_to_test = []
+    
+    # 需要排除的文件
+    exclude_files = ['base_strategy.py', '__init__.py']
+    # 需要排除的工具类文件
+    tool_files = ['condition_analyzer.py']
+    
+    try:
+        logger.info(f"开始扫描策略目录: {strategies_dir}")
+        logger.info(f"排除的文件: {exclude_files + tool_files}")
+        logger.info(f"指定测试的策略: {strategies_to_test if strategies_to_test else '所有策略'}")
+        
+        # 检查strategies目录是否存在
+        if not os.path.exists(strategies_dir):
+            logger.error(f"策略目录不存在: {strategies_dir}")
+            return strategy_classes
+        
+        # 遍历strategies目录下的所有.py文件
+        for filename in os.listdir(strategies_dir):
+            if filename.endswith('.py') and filename not in exclude_files + tool_files:
+                module_name = filename[:-3]  # 去掉.py后缀
+                
+                # 检查是否需要跳过（根据文件名过滤）
+                skip_by_filename = strategies_to_test and module_name not in strategies_to_test
+                
+                try:
+                    # 动态导入模块
+                    module_path = f'strategies.{module_name}'
+                    logger.info(f"尝试导入模块: {module_path}")
+                    module = importlib.import_module(module_path)
+                    
+                    # 遍历模块中的所有属性
+                    for name, obj in inspect.getmembers(module):
+                        # 检查是否是类
+                        if inspect.isclass(obj):
+                            # 检查是否继承自BaseStrategy但不是BaseStrategy本身
+                            try:
+                                is_strategy_class = issubclass(obj, BaseStrategy) and obj is not BaseStrategy
+                            except TypeError:
+                                # 处理非类对象的情况
+                                is_strategy_class = False
+                                
+                            if is_strategy_class:
+                                # 如果有指定策略列表，并且没有被文件名过滤掉，再检查类名
+                                if not strategies_to_test or obj.__name__ in strategies_to_test or not skip_by_filename:
+                                    logger.info(f"找到策略类: {obj.__name__} (来自模块: {module_name})")
+                                    strategy_classes.append(obj)
+                except Exception as e:
+                    logger.error(f"导入模块 {module_name} 时出错: {str(e)}")
+        
+        # 去重
+        strategy_classes = list(set(strategy_classes))
+        logger.info(f"成功加载 {len(strategy_classes)} 个策略类")
+    except Exception as e:
+        logger.error(f"加载策略类时发生错误: {str(e)}")
+    
+    return strategy_classes
 
 
 class BacktestEngine:
@@ -52,7 +136,26 @@ class BacktestEngine:
             initial_capital: 初始资金
             symbol: 交易对
         """
-        self.strategy = strategy_class()
+        try:
+            # 安全地初始化策略实例
+            logger.info(f"初始化策略类: {strategy_class.__name__}")
+            
+            # 优先尝试无参数构造（更安全）
+            try:
+                self.strategy = strategy_class()
+                logger.info(f"成功使用无参数构造函数初始化策略: {strategy_class.__name__}")
+            except Exception as e1:
+                # 如果无参数构造失败，尝试带symbol参数构造
+                logger.warning(f"使用无参数构造函数失败: {str(e1)}，尝试带symbol参数构造")
+                try:
+                    self.strategy = strategy_class(symbol=symbol)
+                    logger.info(f"成功使用带symbol参数构造函数初始化策略: {strategy_class.__name__}")
+                except Exception as e2:
+                    logger.error(f"两种初始化方式都失败，无法创建策略实例: {str(e2)}")
+                    raise RuntimeError(f"无法初始化策略类 {strategy_class.__name__}") from e2
+        except Exception as e:
+            logger.error(f"初始化策略时发生错误: {str(e)}")
+            raise
         self.initial_capital = initial_capital
         self.capital = initial_capital
         self.position = 0  # 持仓数量 (正数为多仓，负数为空仓)
@@ -965,7 +1068,7 @@ class BacktestEngine:
         self.generate_report()
     
     def generate_report(self):
-        """生成回测报告"""
+        """生成回测报告并返回统计信息"""
         logger.info("\n===== BTC多时间框架策略回测报告 =====")
         logger.info(f"初始资金: {self.initial_capital:.2f} USDT")
         logger.info(f"最终资金: {self.capital:.2f} USDT")
@@ -1011,17 +1114,32 @@ class BacktestEngine:
         
         # 记录多时间框架使用情况
         logger.info(f"\n多时间框架使用情况:")
-        logger.info(f"  - 使用的时间框架: {list(self.api_timeframe_map.keys())}")
+        logger.info(f"  - 使用的时间框架: {list(self.api_timeframe_map.keys()) if hasattr(self, 'api_timeframe_map') else []}")
         
-        # 保存交易记录（模拟记录）
+        # 返回统计信息
+        stats = {
+            'symbol': self.symbol,
+            'initial_capital': self.initial_capital,
+            'final_capital': self.capital,
+            'total_profit': total_profit,
+            'total_profit_rate': total_profit_rate,
+            'buy_trades': buy_trades,
+            'sell_trades': sell_trades,
+            'stop_loss_trades': stop_loss_trades,
+            'take_profit_trades': take_profit_trades,
+            'close_position_trades': close_position_trades,
+            'win_rate': win_rate,
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'total_trade_profit': total_trade_profit
+        }
+        
+        return stats
+    
+    def save_trade_records(self, report_dir):
+        """保存交易记录到指定目录"""
         if self.trades:
-            # 创建结果目录 - 使用绝对路径确保在strategies_test目录下
-            base_reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
-            # 创建年月日时分秒格式的子文件夹
-            timestamp_dir = datetime.now().strftime('%Y%m%d_%H%M%S')
-            reports_dir = os.path.join(base_reports_dir, timestamp_dir, 'multi_timeframe_reports')
-            os.makedirs(reports_dir, exist_ok=True)
-            report_filename = os.path.join(reports_dir, f'{self.symbol}_backtest_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+            report_filename = os.path.join(report_dir, f'{self.symbol}_backtest_results.json')
             
             with open(report_filename, 'w', encoding='utf-8') as f:
                 # 将datetime转换为字符串以便JSON序列化
@@ -1035,15 +1153,12 @@ class BacktestEngine:
                 # 添加回测元数据
                 backtest_results = {
                     'metadata': {
-                        'strategy': 'MultiTimeframeStrategy',
+                        'strategy': self.strategy.__class__.__name__ if hasattr(self, 'strategy') else 'UnknownStrategy',
                         'symbol': self.symbol,
                         'initial_capital': self.initial_capital,
                         'final_capital': self.capital,
-                        'total_profit': total_profit,
-                        'total_profit_rate': total_profit_rate,
-                        'win_rate': win_rate,
                         'backtest_start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'timeframes_used': list(self.api_timeframe_map.keys())
+                        'timeframes_used': list(self.api_timeframe_map.keys()) if hasattr(self, 'api_timeframe_map') else []
                     },
                     'trades': serializable_trades
                 }
@@ -1051,28 +1166,171 @@ class BacktestEngine:
                 json.dump(backtest_results, f, indent=2, ensure_ascii=False)
             
             logger.info(f"模拟交易记录已保存到: {report_filename}")
-            logger.info("注意: 所有交易均为模拟记录，未调用实际的OKX API进行真实交易")
+
+
+def setup_logger(log_dir):
+    """设置日志记录器，将日志输出到指定目录"""
+    # 创建detail文件夹
+    detail_dir = os.path.join(log_dir, 'detail')
+    os.makedirs(detail_dir, exist_ok=True)
+    
+    # 配置日志文件
+    log_file = os.path.join(detail_dir, 'backtest.log')
+    
+    # 获取根日志记录器
+    root_logger = logging.getLogger()
+    
+    # 移除所有现有的处理器
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # 设置日志级别
+    root_logger.setLevel(logging.INFO)
+    
+    # 创建文件处理器
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    
+    # 创建控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    
+    # 设置日志格式
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    # 添加处理器到根日志记录器
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    # 更新全局logger变量
+    global logger
+    logger = root_logger
+    
+    return logger
+
+
+def generate_summary_report(strategy_name, backtest_start_time, backtest_end_time, 
+                           start_datetime, end_datetime, symbol_stats, report_dir):
+    """生成汇总报告"""
+    summary_file = os.path.join(report_dir, 'summary.txt')
+    
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        f.write("===== 回测汇总报告 =====\n\n")
+        f.write(f"策略名称: {strategy_name}\n")
+        f.write(f"回测时间段: {start_datetime} 至 {end_datetime}\n")
+        f.write(f"回测执行时间: {backtest_start_time} 至 {backtest_end_time}\n")
+        f.write(f"回测标的数量: {len(symbol_stats)}\n")
+        f.write("\n回测标的列表:\n")
+        for symbol in symbol_stats.keys():
+            f.write(f"  - {symbol}\n")
+        
+        f.write("\n各标的表现情况:\n")
+        f.write("-" * 80 + "\n")
+        f.write(f"{'标的':<15}{'结束金额(USDT)':<20}{'开仓次数':<10}{'止盈次数':<10}{'止损次数':<10}\n")
+        f.write("-" * 80 + "\n")
+        
+        for symbol, stats in symbol_stats.items():
+            f.write(f"{symbol:<15}{stats['final_capital']:<20.2f}{stats['buy_trades']:<10}{stats['take_profit_trades']:<10}{stats['stop_loss_trades']:<10}\n")
+        
+        # 计算总体统计
+        total_initial = sum(stats['initial_capital'] for stats in symbol_stats.values())
+        total_final = sum(stats['final_capital'] for stats in symbol_stats.values())
+        total_profit = total_final - total_initial
+        total_profit_rate = (total_profit / total_initial) * 100 if total_initial > 0 else 0
+        total_trades = sum(stats['buy_trades'] for stats in symbol_stats.values())
+        total_take_profit = sum(stats['take_profit_trades'] for stats in symbol_stats.values())
+        total_stop_loss = sum(stats['stop_loss_trades'] for stats in symbol_stats.values())
+        
+        f.write("-" * 80 + "\n")
+        f.write(f"{'总计':<15}{total_final:<20.2f}{total_trades:<10}{total_take_profit:<10}{total_stop_loss:<10}\n")
+        f.write("\n")
+        f.write(f"总体收益率: {total_profit_rate:.2f}%\n")
+        f.write(f"总体收益金额: {total_profit:.2f} USDT\n")
+    
+    logger.info(f"汇总报告已保存到: {summary_file}")
 
 
 if __name__ == "__main__":
-    logger.info("启动多交易对多时间框架策略回测")
+    logger.info("启动多交易对多策略回测系统")
     logger.info("注意: 本回测使用模拟记录方式，不会调用实际的OKX仓位API")
     
-    # 遍历每个交易对执行回测
-    for symbol in symbols:
-        logger.info(f"开始交易对 {symbol} 的回测")
+    # 加载策略类
+    strategy_classes = load_strategy_classes(strategies_to_test)
+    
+    if not strategy_classes:
+        logger.error("未能加载任何策略类，回测无法继续")
+        sys.exit(1)
+    
+    # 遍历每个策略
+    for strategy_class in strategy_classes:
+        strategy_name = strategy_class.__name__
+        logger.info(f"\n========== 开始策略回测: {strategy_name} ==========")
         
-        # 创建回测引擎
-        backtest = BacktestEngine(
-            strategy_class=MultiTimeframeStrategy,
-            initial_capital=10000.0,
-            symbol=symbol
+        # 记录策略回测开始时间
+        strategy_backtest_start_time = datetime.now()
+        strategy_backtest_start_time_str = strategy_backtest_start_time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 创建策略报告目录
+        reports_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
+        strategy_report_dir = os.path.join(
+            reports_base_dir, 
+            f"{strategy_name}_{strategy_backtest_start_time.strftime('%Y%m%d_%H%M%S')}"
+        )
+        os.makedirs(strategy_report_dir, exist_ok=True)
+        
+        # 设置日志记录器
+        setup_logger(strategy_report_dir)
+        logger.info(f"回测报告将保存在: {strategy_report_dir}")
+        
+        # 存储每个交易对的统计信息
+        symbol_stats = {}
+        
+        # 遍历每个交易对执行回测
+        for symbol in symbols:
+            logger.info(f"开始交易对 {symbol} 的回测")
+            
+            # 创建回测引擎
+            backtest = BacktestEngine(
+                strategy_class=strategy_class,
+                initial_capital=10000.0,
+                symbol=symbol
+            )
+            
+            # 运行回测
+            backtest.run_backtest()
+            
+            # 获取回测统计信息
+            stats = backtest.generate_report()
+            symbol_stats[symbol] = stats
+            
+            # 保存交易记录到detail文件夹
+            detail_dir = os.path.join(strategy_report_dir, 'detail')
+            os.makedirs(detail_dir, exist_ok=True)
+            backtest.save_trade_records(detail_dir)
+            
+            logger.info(f"交易对 {symbol} 回测完成")
+        
+        # 记录策略回测结束时间
+        strategy_backtest_end_time = datetime.now()
+        strategy_backtest_end_time_str = strategy_backtest_end_time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 生成汇总报告
+        start_datetime_str = start_date.strftime("%Y-%m-%d %H:%M:%S")
+        end_datetime_str = end_date.strftime("%Y-%m-%d %H:%M:%S")
+        
+        generate_summary_report(
+            strategy_name=strategy_name,
+            backtest_start_time=strategy_backtest_start_time_str,
+            backtest_end_time=strategy_backtest_end_time_str,
+            start_datetime=start_datetime_str,
+            end_datetime=end_datetime_str,
+            symbol_stats=symbol_stats,
+            report_dir=strategy_report_dir
         )
         
-        # 运行回测
-        backtest.run_backtest()
-        
-        logger.info(f"交易对 {symbol} 回测完成")
+        logger.info(f"========== 策略 {strategy_name} 回测完成 ==========\n")
     
-    logger.info("所有交易对回测完成")
-    logger.info("所有交易均为模拟记录，已保存到reports/multi_timeframe_reports目录")
+    logger.info("所有策略和交易对回测完成")
+    logger.info("所有交易均为模拟记录，已保存到reports目录下对应策略文件夹中")
