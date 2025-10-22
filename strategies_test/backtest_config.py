@@ -20,7 +20,7 @@ INITIAL_CAPITAL = 10000.0
 # 回测策略配置
 # 指定要测试的策略，空列表表示测试所有策略
 # 可以填写策略文件名（不含.py后缀）或策略类名
-STRATEGIES_TO_TEST = ["multi_timeframe_strategy_ema", "multi_timeframe_strategy"]  # 测试所有策略
+STRATEGIES_TO_TEST = ["multi_timeframe_strategy_ema", "multi_timeframe_strategy", "test3"]  # 测试所有策略
 # STRATEGIES_TO_TEST = ["multi_timeframe_strategy"]  # 只测试指定文件名的策略
 # STRATEGIES_TO_TEST = ["MultiTimeframeStrategy"]  # 只测试指定类名的策略
 
