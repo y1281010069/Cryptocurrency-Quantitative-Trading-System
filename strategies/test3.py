@@ -397,10 +397,12 @@ class MultiTimeframeStrategy(BaseStrategy):
                     # 格式化name参数：从KAITO/USDT转换为KAITO（去掉-USDT后缀）
                     name = signal.symbol.replace('/', '-').replace(':USDT', '')
                     
-                    # 使用lib2.py中的send_trading_signal_to_api方法发送交易信号，传入LOSS参数
+                    # 使用lib2.py中的send_trading_signal_to_api方法发送交易信号，传入LOSS和mechanism_id参数
                     # 从配置中获取LOSS值，如果不存在则使用默认值1
                     loss_value = self.config.get('LOSS', 1)
-                    send_trading_signal_to_api(signal, name, logger, LOSS=loss_value)  
+                    # 从配置中获取MECHANISM_ID值
+                    mechanism_id_value = self.config.get('MECHANISM_ID', '')
+                    send_trading_signal_to_api(signal, name, logger, LOSS=loss_value, mechanism_id=mechanism_id_value)  
                 except Exception as e:
                     logger.error(f"发送交易信号到API时发生错误: {e}")
                      

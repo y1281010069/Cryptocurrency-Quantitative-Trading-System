@@ -339,7 +339,8 @@ class MultiTimeframeStrategy(BaseStrategy):
                     name = signal.symbol.replace('/', '-').replace(':USDT', '')
                     
                     loss_value = self.config.get('LOSS', 1)
-                    send_trading_signal_to_api(signal, name, logger, LOSS=loss_value)  
+                    mechanism_id_value = self.config.get('MECHANISM_ID', '')
+                    send_trading_signal_to_api(signal, name, logger, LOSS=loss_value, mechanism_id=mechanism_id_value)  
                 except Exception as e:
                     logger.error(f"发送交易信号到API时发生错误: {e}")
             return filename
