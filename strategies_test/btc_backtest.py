@@ -22,15 +22,15 @@ import inspect
 #symbols = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "ARB-USDT", "LTC-USDT"]  # 交易对列表
 symbols = ["BTC-USDT", "ETH-USDT"]  # 交易对列表
 
-# 回测时间范围配置
-start_date = datetime(2025, 1, 1)  # 开始日期
-end_date = start_date + timedelta(days=40)  # 结束日期（开始日期往后240天）
+# 导入回测配置
+from backtest_config import START_DATE, END_DATE, STRATEGIES_TO_TEST
 
-# 策略配置 - 指定要测试的策略，空列表表示测试所有策略
-# 可以填写策略文件名（不含.py后缀）或策略类名
-strategies_to_test = ["multi_timeframe_strategy_ema", "multi_timeframe_strategy"]  # 测试所有策略
-# strategies_to_test = ["multi_timeframe_strategy"]  # 只测试指定文件名的策略
-# strategies_to_test = ["MultiTimeframeStrategy"]  # 只测试指定类名的策略
+# 回测时间范围配置
+start_date = START_DATE  # 开始日期（从配置文件导入）
+end_date = END_DATE  # 结束日期（从配置文件导入）
+
+# 策略配置 - 从配置文件导入
+strategies_to_test = STRATEGIES_TO_TEST  # 测试策略列表（从配置文件导入）
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -503,10 +503,10 @@ class BacktestEngine:
         """准备回测数据，获取指定时间范围的多时间框架K线"""
         logger.info("开始准备回测数据...")
         
-        # 设置固定时间范围：20250101 往后3个月
-        start_date = datetime(2025, 1, 1)
-        # 计算3个月后的日期
-        end_date = start_date + timedelta(days=240)  # 简化计算，使用90天近似3个月
+        # 从配置文件获取时间范围
+        from backtest_config import START_DATE, END_DATE
+        start_date = START_DATE
+        end_date = END_DATE
         
         # 转换为毫秒时间戳
         end_time_ms = int(end_date.timestamp() * 1000)
