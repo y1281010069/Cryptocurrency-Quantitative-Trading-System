@@ -15,6 +15,8 @@ from strategies.base_strategy import BaseStrategy
 from strategies.multi_timeframe_strategy import MultiTimeframeStrategy, MultiTimeframeSignal
 import sys
 import os
+import importlib
+import inspect
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # 导入lib.py文件作为一个模块
@@ -54,8 +56,11 @@ class MultiTimeframeProfessionalSystem:
         # 初始化交易所连接
         self._init_exchange()
         
-        # 加载默认策略，现在不传配置参数，策略将使用自己内置的TRADING_CONFIG
-        self.register_strategy("MultiTimeframeStrategy", MultiTimeframeStrategy())
+        # 策略启用配置
+        self.ENABLED_STRATEGIES = ["test3"]  # 空列表表示启用所有加载的策略
+        
+        # 动态加载策略
+        self._load_strategies()
     
     def _init_exchange(self):
         """初始化交易所连接"""
@@ -79,6 +84,93 @@ class MultiTimeframeProfessionalSystem:
         """注册交易策略"""
         self.strategies[name] = strategy
         self.logger.info(f"✅ 策略 '{name}' 已注册")
+    
+    def _load_strategies(self):
+        """
+        动态加载strategies文件夹中所有继承自BaseStrategy的策略类
+        并根据ENABLED_STRATEGIES配置决定是否启用
+        """
+        try:
+            # 加载策略类
+            strategy_classes = self._get_strategy_classes()
+            
+            # 注册并初始化策略
+            for strategy_class, module_name in strategy_classes.items():
+                strategy_name = strategy_class.__name__
+                
+                # 检查是否需要启用该策略
+                if self.ENABLED_STRATEGIES and strategy_name not in self.ENABLED_STRATEGIES and module_name not in self.ENABLED_STRATEGIES:
+                    self.logger.info(f"⏩ 跳过策略 '{strategy_name}' (未在启用列表中)")
+                    continue
+                
+                try:
+                    # 安全地初始化策略实例
+                    # 优先尝试无参数构造
+                    strategy_instance = strategy_class()
+                    self.register_strategy(strategy_name, strategy_instance)
+                except Exception as e:
+                    self.logger.error(f"❌ 初始化策略 '{strategy_name}' 失败: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"❌ 动态加载策略时发生错误: {str(e)}")
+    
+    def _get_strategy_classes(self):
+        """
+        动态加载strategies文件夹中的策略类，只加载继承自BaseStrategy的类
+        
+        Returns:
+            dict: 策略类到文件名的映射字典
+        """
+        strategy_class_to_filename = {}
+        strategies_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'strategies')
+        
+        # 需要排除的文件
+        exclude_files = ['base_strategy.py', '__init__.py']
+        # 需要排除的工具类文件
+        tool_files = ['condition_analyzer.py']
+        
+        try:
+            self.logger.info(f"开始扫描策略目录: {strategies_dir}")
+            self.logger.info(f"排除的文件: {exclude_files + tool_files}")
+            self.logger.info(f"启用的策略: {self.ENABLED_STRATEGIES if self.ENABLED_STRATEGIES else '所有策略'}")
+            
+            # 检查strategies目录是否存在
+            if not os.path.exists(strategies_dir):
+                self.logger.error(f"策略目录不存在: {strategies_dir}")
+                return strategy_class_to_filename
+            
+            # 遍历strategies目录下的所有.py文件
+            for filename in os.listdir(strategies_dir):
+                if filename.endswith('.py') and filename not in exclude_files + tool_files:
+                    module_name = filename[:-3]  # 去掉.py后缀
+                    
+                    try:
+                        # 动态导入模块
+                        module_path = f'strategies.{module_name}'
+                        self.logger.info(f"尝试导入模块: {module_path}")
+                        module = importlib.import_module(module_path)
+                        
+                        # 遍历模块中的所有属性
+                        for name, obj in inspect.getmembers(module):
+                            # 检查是否是类
+                            if inspect.isclass(obj):
+                                # 检查是否继承自BaseStrategy但不是BaseStrategy本身
+                                try:
+                                    is_strategy_class = issubclass(obj, BaseStrategy) and obj is not BaseStrategy
+                                except TypeError:
+                                    # 处理非类对象的情况
+                                    is_strategy_class = False
+                                    
+                                if is_strategy_class:
+                                    self.logger.info(f"找到策略类: {obj.__name__} (来自模块: {module_name})")
+                                    strategy_class_to_filename[obj] = module_name
+                    except Exception as e:
+                        self.logger.error(f"导入模块 {module_name} 时出错: {str(e)}")
+            
+            self.logger.info(f"成功加载 {len(strategy_class_to_filename)} 个策略类")
+        except Exception as e:
+            self.logger.error(f"加载策略类时发生错误: {str(e)}")
+        
+        return strategy_class_to_filename
     
     def run_analysis(self):
         """运行多时间框架分析"""

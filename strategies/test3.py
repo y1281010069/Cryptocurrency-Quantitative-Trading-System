@@ -45,7 +45,7 @@ TRADING_CONFIG = {
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
     "MAX_POSITIONS": 30,
     "MECHANISM_ID": 14,
-    "LOSS": 0.5,  # 损失参数，传递给API
+    "LOSS": 0.2,  # 损失参数，传递给API
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
     "TIMEFRAME_DATA_LENGTHS": {
         '4h': 168,   # 4小时
@@ -152,6 +152,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             config = TRADING_CONFIG
         
         super().__init__("MultiTimeframeStrategy", config)
+        print("init  test3")
         self._init_exchange()
         self.logger = logging.getLogger(__name__)
 
