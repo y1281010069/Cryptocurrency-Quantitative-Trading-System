@@ -817,8 +817,6 @@ class BacktestEngine:
                     tf_signal = getattr(signal, attr_name, '未知')
                     is_trigger_signal = "(触发信号)" if tf == signal_trigger_timeframe else ""
                     logger.debug(f"  - {tf}: {tf_signal} {is_trigger_signal}")
-            else:
-                logger.info(f"[{current_date}] 未生成信号")
             
             # 执行交易（模拟记录，不调用实际API）
             if signal:
