@@ -17,9 +17,9 @@ INITIAL_CAPITAL = 10000.0
 SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "ARB-USDT", "LTC-USDT"]  # 交易对列表
 
 # 可以填写策略文件名（不含.py后缀）或策略类名
-STRATEGIES_TO_TEST = ["multi_timeframe_strategy_ema", "multi_timeframe_strategy", "test3"]  # 测试所有策略
-# STRATEGIES_TO_TEST = ["multi_timeframe_strategy"]  # 只测试指定文件名的策略
-# STRATEGIES_TO_TEST = ["MultiTimeframeStrategy"]  # 只测试指定类名的策略
+STRATEGIES_TO_TEST = ["test5", "test6", "test7", "test8"]
+# STRATEGIES_TO_TEST = ["multi_timeframe_strategy_ema", "multi_timeframe_strategy", "test3"]  # 测试所有策略
+
 
 # 其他回测相关配置
 MAX_RETRY_COUNT = 3  # API请求最大重试次数
