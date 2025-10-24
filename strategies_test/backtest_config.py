@@ -17,7 +17,7 @@ SYMBOLS = ["BTC-USDT", "ETH-USDT"]  # 交易对列表
 # SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "ADA-USDT", "DOGE-USDT", "ARB-USDT", "LTC-USDT"]  # 交易对列表
 
 # 可以填写策略文件名（不含.py后缀）或策略类名
-STRATEGIES_TO_TEST = ["test7", "test8"]
+STRATEGIES_TO_TEST = ["test4", "test6"]
 # STRATEGIES_TO_TEST = ["multi_timeframe_strategy_ema", "multi_timeframe_strategy", "test3"]  # 测试所有策略
 
 

@@ -269,7 +269,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         # 使用配置的交易信号触发周期
         if timeframe == self.config["SIGNAL_TRIGGER_TIMEFRAME"]:
             # 交易信号触发周期只运行RSI交叉评分
-            score += calculate_rsi_crossover_score(df)
+            score += calculate_rsi_crossover_score(df, window=7)
         else:
             # 非交易信号触发周期运行其他评分方法
             score += calculate_trend_indicators_and_score(df, current_price, timeframe)

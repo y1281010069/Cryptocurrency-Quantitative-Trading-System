@@ -60,6 +60,8 @@ def calculate_ema_trend_indicators_and_score(df: pd.DataFrame, current_price, ti
     
     return score
 
+
+
 def calculate_rsi_score(df: pd.DataFrame, timeframe):
     """计算RSI指标并返回RSI评分
     
@@ -88,19 +90,20 @@ def calculate_rsi_score(df: pd.DataFrame, timeframe):
     
     return score
 
-def calculate_rsi_crossover_score(df: pd.DataFrame):
+def calculate_rsi_crossover_score(df: pd.DataFrame, window=7):
     """计算RSI交叉评分（专用于15m时间框架）
     
     Args:
         df: 包含价格数据的DataFrame
+        window: RSI计算的周期窗口，默认7
         
     Returns:
         int: RSI交叉评分
     """
     # 计算RSI
     delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=7).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=7).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
     rs = gain / loss
     rsi_series = 100 - (100 / (1 + rs))
     

@@ -46,11 +46,11 @@ TRADING_CONFIG = {
     "MAX_POSITIONS": 30,
     "MECHANISM_ID": 14,
     "LOSS": 0.2,  # 损失参数，传递给API
-    "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
+    "SIGNAL_TRIGGER_TIMEFRAME": "5m",  # 交易信号触发周期
     "TIMEFRAME_DATA_LENGTHS": {
         '4h': 168,   # 4小时
         '1h': 168,   # 1小时
-        '15m': 168   # 15分钟
+        '5m': 168   # 5分钟
     }  # 不同时间框架所需的数据长度
 }
 
@@ -105,17 +105,18 @@ def create_multi_timeframe_signal_class():
         ('timestamp', datetime)
     ]
     
+    
     # 从配置中获取所有时间框架作为默认参数字段
     default_fields = []
     timeframe_config = TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {})
     for timeframe in timeframe_config.keys():
-        # 将时间框架格式化为驼峰式命名（例如：4h -> h4_signal, 1h -> h1_signal, 15m -> m15_signal）
+        # 将时间框架格式化为驼峰式命名（例如：4h -> h4_signal, 1h -> h1_signal, 5m -> m5_signal）
         if timeframe == '4h':
             field_name = 'h4_signal'
         elif timeframe == '1h':
             field_name = 'h1_signal'
-        elif timeframe == '15m':
-            field_name = 'm15_signal'
+        elif timeframe == '5m':
+            field_name = 'm5_signal'
         else:
             # 对于其他时间框架，使用通用格式
             field_name = f'{timeframe}_signal'
@@ -181,10 +182,10 @@ class MultiTimeframeStrategy(BaseStrategy):
                 return None
             
             # 获取当前价格
-            current_price = data.get('15m', list(data.values())[0])['close'].iloc[-1]
+            current_price = data.get('5m', list(data.values())[0])['close'].iloc[-1]
             
             # 综合评分 - 更新权重，去掉1w和1d周期
-            weights = {'4h': 0.4, '1h': 0.4, '15m': 0.2}
+            weights = {'4h': 0.4, '1h': 0.4, '5m': 0.2}
             total_score = 0
             reasoning = []
             
@@ -213,14 +214,14 @@ class MultiTimeframeStrategy(BaseStrategy):
             # 添加详细日志，记录每个交易对的分析结果
             # logger.info(f"{symbol} 分析结果 - 总分: {total_score:.3f}, 操作: {overall_action}, 信号: {signals}")
             
-            # 获取15分钟时间框架的数据来计算ATR
-            df_15m = data.get('15m')
-            if df_15m is None or df_15m.empty:
-                # 如果没有15m数据，使用第一个可用时间框架的数据
-                df_15m = list(data.values())[0]
+            # 获取5分钟时间框架的数据来计算ATR
+            df_5m = data.get('5m')
+            if df_5m is None or df_5m.empty:
+                # 如果没有5m数据，使用第一个可用时间框架的数据
+                df_5m = list(data.values())[0]
             
             # 计算ATR值
-            atr_value = calculate_atr(df_15m)
+            atr_value = calculate_atr(df_5m)
             
             # 检查是否存在观望信号
             has_neutral = any("观望" in signal for signal in signals.values())
@@ -273,7 +274,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                 daily_trend="观望",   # 默认值，不再使用
                 h4_signal=signals.get('4h', '观望'),
                 h1_signal=signals.get('1h', '观望'),
-                m15_signal=signals.get('15m', '观望'),
+                m5_signal=signals.get('5m', '观望'),
                 timeframe_signals=timeframe_signals,
                 overall_action=overall_action,
                 confidence_level=confidence,
@@ -314,7 +315,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         
         
         # 根据时间框架调整权重 - 移除1w和1d的特殊处理
-        if timeframe in ['5m', '15m']:
+        if timeframe in ['5m']:
             score *= 0.8  # 短期时间框架权重较低
         
         # 确定信号
@@ -342,7 +343,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         return TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {
             '4h': 168,   # 4小时
             '1h': 168,   # 1小时
-            '15m': 168   # 15分钟
+            '5m': 168   # 5分钟
         })
     
     def save_trade_signals(self, opportunities: List[Any]) -> Optional[str]:
@@ -605,7 +606,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             f.write("📊 多时间框架专业分析报告\n")
             f.write("=" * 80 + "\n")
             f.write(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"时间框架维度: 周线→日线→4小时→1小时→15分钟\n")
+            f.write(f"时间框架维度: 周线→日线→4小时→1小时→5分钟\n")
             f.write(f"发现机会: {len(all_opportunities)}\n")
             f.write(f"策略名称: {self.get_name()}\n")
             f.write("=" * 80 + "\n\n")
@@ -628,7 +629,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                 # 获取时间框架信号，使用默认值作为后备
                 h4_signal = getattr(opportunity, 'h4_signal', '未知')
                 h1_signal = getattr(opportunity, 'h1_signal', '未知')
-                m15_signal = getattr(opportunity, 'm15_signal', '未知')
+                m5_signal = getattr(opportunity, 'm5_signal', '未知')
                 
                 # 为了兼容解析，设置默认的周线和日线信号
                 weekly_trend = getattr(opportunity, 'weekly_trend', '观望')
@@ -652,7 +653,7 @@ class MultiTimeframeStrategy(BaseStrategy):
                 f.write(f"日线趋势: {daily_trend}\n")
                 f.write(f"4小时信号: {h4_signal}\n")
                 f.write(f"1小时信号: {h1_signal}\n")
-                f.write(f"15分钟信号: {m15_signal}\n")
+                f.write(f"5分钟信号: {m5_signal}\n")
                 
                 # 写入目标价格和止损价格
                 f.write(f"短期目标: {target_short:.6f}\n")

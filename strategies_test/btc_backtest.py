@@ -626,19 +626,39 @@ class BacktestEngine:
         # 准备回测数据
         if not self.prepare_backtest_data():
             return
-        # 以最细粒度的时间框架（15分钟）作为回测的基准
-        base_tf = '15m'
+        # 获取策略所需的时间框架，并确定最小粒度的时间框架作为基准
+        required_timeframes = self.strategy.get_required_timeframes()
+        
+        # 定义时间框架优先级，用于确定最小粒度
+        timeframe_priority = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w']
+        
+        # 找出策略使用的最小粒度时间框架
+        base_tf = None
+        for tf in timeframe_priority:
+            if tf in required_timeframes:
+                base_tf = tf
+                break
+        
+        # 如果没有找到优先级中的时间框架，则使用第一个可用的时间框架
+        if base_tf is None and required_timeframes:
+            base_tf = list(required_timeframes.keys())[0]
+        
+        # 如果还是没有找到时间框架，则使用默认的15m
+        if base_tf is None:
+            base_tf = '15m'
+            logger.warning("无法从策略获取时间框架信息，使用默认的15分钟时间框架")
+        
         base_df = self.timeframe_data.get(base_tf)
         
         if base_df is None or base_df.empty:
-            logger.error("无法获取15分钟时间框架数据，回测无法继续")
+            logger.error(f"无法获取{base_tf}时间框架数据，回测无法继续")
             return
         
-        logger.info(f"回测数据点数 (15分钟): {len(base_df)}")
+        logger.info(f"回测数据点数 ({base_tf}): {len(base_df)}")
         logger.info(f"数据时间范围: {base_df['datetime'].iloc[0]} 至 {base_df['datetime'].iloc[-1]}")
         
-        # 回测主循环 - 只在15分钟时间框架上迭代
-        logger.info(f"开始回测主循环，将处理从索引168到{len(base_df)-1}的15分钟数据点")
+        # 回测主循环 - 在最小粒度时间框架上迭代
+        logger.info(f"开始回测主循环，将处理从索引168到{len(base_df)-1}的{base_tf}数据点")
         
         # 为每个时间框架建立时间戳到索引的映射，提高查找效率
         tf_index_maps = {}
@@ -657,8 +677,8 @@ class BacktestEngine:
         for i in range(168, len(base_df)):  # 跳过前168个数据点，确保有足够的历史数据计算指标
             logger.debug(f"迭代索引: {i}/{len(base_df)-1}")
             
-            # 获取当前15分钟K线的时间
-            current_time_15m = base_df['datetime'].iloc[i]
+            # 获取当前基准时间框架K线的时间
+            current_time = base_df['datetime'].iloc[i]
             
             # 为每个时间框架提取当前时间点对应的数据窗口
             current_data = {}
@@ -678,22 +698,22 @@ class BacktestEngine:
                 # 获取该时间框架需要的数据长度
                 window_size = self.strategy.get_required_timeframes().get(strategy_tf, 168)
                 
-                # 查找当前15分钟时间对应的该时间框架的索引
-                # 对于1小时和4小时时间框架，我们需要找到不晚于当前15分钟时间的最新K线
+                # 查找当前基准时间对应的该时间框架的索引
+                # 对于较大时间框架，我们需要找到不晚于当前基准时间的最新K线
                 closest_idx = None
                 
                 # 使用预构建的索引映射进行查找
                 if api_tf in tf_index_maps:
-                    # 查找不晚于current_time_15m的最新时间戳
-                    valid_times = [dt for dt in tf_index_maps[api_tf].keys() if dt <= current_time_15m]
+                    # 查找不晚于current_time的最新时间戳
+                    valid_times = [dt for dt in tf_index_maps[api_tf].keys() if dt <= current_time]
                     if valid_times:
                         closest_time = max(valid_times)
                         closest_idx = tf_index_maps[api_tf][closest_time]
                 
                 # 如果没有找到对应的索引，使用二分查找作为备选
                 if closest_idx is None:
-                    # 使用二分查找找到不大于current_time_15m的最大索引
-                    closest_idx = df['datetime'].searchsorted(current_time_15m, side='right') - 1
+                    # 使用二分查找找到不大于current_time的最大索引
+                    closest_idx = df['datetime'].searchsorted(current_time, side='right') - 1
                 
                 # 确保索引有效
                 if closest_idx >= 0:
@@ -705,7 +725,7 @@ class BacktestEngine:
                     if len(current_data[strategy_tf]) < window_size:
                         logger.warning(f"{strategy_tf}时间框架数据窗口不足，当前{len(current_data[strategy_tf])}条，需要{window_size}条")
                 else:
-                    logger.warning(f"无法找到{strategy_tf}时间框架中对应{current_time_15m}的K线")
+                    logger.warning(f"无法找到{strategy_tf}时间框架中对应{current_time}的K线")
                     continue
             
             # 验证是否获取了所有需要的时间框架数据
@@ -718,10 +738,10 @@ class BacktestEngine:
             
             # 添加详细日志来验证时间框架数据的对应关系
             logger.debug(f"【时间框架数据验证】")
-            # 获取基准时间（15m时间框架的当前时间）
+            # 获取基准时间（基准时间框架的当前时间）
             base_time = None
-            if '15m' in current_data:
-                base_time = current_data['15m']['datetime'].iloc[-1]
+            if base_tf in current_data:
+                base_time = current_data[base_tf]['datetime'].iloc[-1]
             
             # 记录每个时间框架的数据时间范围和最新时间点
             for tf, df in current_data.items():
@@ -743,19 +763,28 @@ class BacktestEngine:
                 if time_diff is not None:
                     logger.debug(f"    与基准时间差: {time_diff:.2f} 分钟")
                     # 检查时间差异是否合理
-                    if tf == '15m' and abs(time_diff) > 7.5:  # 15分钟K线允许50%偏差
-                        logger.warning(f"    ⚠️  {tf}时间框架与基准时间差异过大: {time_diff:.2f}分钟")
-                    elif tf == '1h' and abs(time_diff) > 60:  # 1小时K线允许50%偏差
-                        logger.warning(f"    ⚠️  {tf}时间框架与基准时间差异过大: {time_diff:.2f}分钟")
-                    elif tf == '4h' and abs(time_diff) > 240:  # 4小时K线允许50%偏差
+                    # 计算时间框架的分钟数，用于确定合理的时间差容限
+                    tf_minutes = 0
+                    if tf.endswith('m'):
+                        tf_minutes = int(tf[:-1])
+                    elif tf.endswith('h'):
+                        tf_minutes = int(tf[:-1]) * 60
+                    elif tf.endswith('d'):
+                        tf_minutes = int(tf[:-1]) * 1440
+                    
+                    # 对于基准时间框架，允许50%偏差
+                    if tf == base_tf and abs(time_diff) > tf_minutes * 0.5:
+                        logger.warning(f"    ⚠️  基准时间框架{tf}与参考时间差异过大: {time_diff:.2f}分钟")
+                    # 对于其他时间框架，根据其自身周期设置合理容差
+                    elif tf_minutes > 0 and abs(time_diff) > tf_minutes:
                         logger.warning(f"    ⚠️  {tf}时间框架与基准时间差异过大: {time_diff:.2f}分钟")
             
-            # 获取当前价格、最高价、最低价和时间（优先使用15m时间框架的数据，以获得更细粒度的日志记录）
-            if '15m' in current_data:
-                current_price = current_data['15m']['close'].iloc[-1]
-                current_high = current_data['15m']['high'].iloc[-1]
-                current_low = current_data['15m']['low'].iloc[-1]
-                current_date = current_data['15m']['datetime'].iloc[-1]
+            # 获取当前价格、最高价、最低价和时间（优先使用基准时间框架的数据，以获得更细粒度的日志记录）
+            if base_tf in current_data:
+                current_price = current_data[base_tf]['close'].iloc[-1]
+                current_high = current_data[base_tf]['high'].iloc[-1]
+                current_low = current_data[base_tf]['low'].iloc[-1]
+                current_date = current_data[base_tf]['datetime'].iloc[-1]
             elif '1h' in current_data:
                 current_price = current_data['1h']['close'].iloc[-1]
                 current_high = current_data['1h']['high'].iloc[-1]
