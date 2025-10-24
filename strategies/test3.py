@@ -48,9 +48,9 @@ TRADING_CONFIG = {
     "LOSS": 0.2,  # 损失参数，传递给API
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
     "TIMEFRAME_DATA_LENGTHS": {
-        '4h': 168,   # 4小时
-        '1h': 168,   # 1小时
-        '15m': 168   # 15分钟
+        '4h': 299,   # 4小时
+        '1h': 299,   # 1小时
+        '15m': 299   # 15分钟
     }  # 不同时间框架所需的数据长度
 }
 

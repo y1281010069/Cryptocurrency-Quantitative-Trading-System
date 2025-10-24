@@ -306,10 +306,10 @@ class MultiTimeframeStrategy(BaseStrategy):
         # 使用配置的交易信号触发周期
         if timeframe == self.config["SIGNAL_TRIGGER_TIMEFRAME"]:
             # 交易信号触发周期只运行RSI交叉评分
-            score += calculate_bollinger_band_signal_score(df) / 3
+            score += calculate_bollinger_band_signal_score(df) 
         else:
             # 非交易信号触发周期运行其他评分方法
-            score += calculate_bollinger_band_signal_score(df) / 3
+            score += calculate_bollinger_band_signal_score(df)
             score += calculate_volume_score(df)
         
         

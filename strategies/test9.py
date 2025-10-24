@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, make_dataclass
 import logging
 import sys
 import ccxt
-from strategies.condition_analyzer import calculate_bollinger_band_signal_score,calculate_ema_trend_indicators_and_score,calculate_rsi_divergence_score, calculate_volume_score
+from strategies.condition_analyzer import calculate_ema_trend_indicators_and_score, calculate_rsi_score, calculate_volume_score, calculate_rsi_crossover_score
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,8 +33,8 @@ OKX_CONFIG = {
 
 # 策略配置 - 每个策略使用独立配置
 TRADING_CONFIG = {
-    "BUY_THRESHOLD": 0.3, 
-    "SELL_THRESHOLD": -0.3,
+    "BUY_THRESHOLD": 0.1, 
+    "SELL_THRESHOLD": -0.1,
     "ATR_PERIOD": 14,
     "TARGET_MULTIPLIER": 4.5,
     "STOP_LOSS_MULTIPLIER": 3,
@@ -46,9 +46,9 @@ TRADING_CONFIG = {
     "MAX_POSITIONS": 30,
     "MECHANISM_ID": 14,
     "LOSS": 0.2,  # 损失参数，传递给API
+
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
     "TIMEFRAME_DATA_LENGTHS": {
-        '4h': 168,   # 4小时
         '1h': 168,   # 1小时
         '15m': 168   # 15分钟
     }  # 不同时间框架所需的数据长度
@@ -110,9 +110,7 @@ def create_multi_timeframe_signal_class():
     timeframe_config = TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {})
     for timeframe in timeframe_config.keys():
         # 将时间框架格式化为驼峰式命名（例如：4h -> h4_signal, 1h -> h1_signal, 15m -> m15_signal）
-        if timeframe == '4h':
-            field_name = 'h4_signal'
-        elif timeframe == '1h':
+        if timeframe == '1h':
             field_name = 'h1_signal'
         elif timeframe == '15m':
             field_name = 'm15_signal'
@@ -152,7 +150,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             config = TRADING_CONFIG
         
         super().__init__("MultiTimeframeStrategy", config)
-        print("init  test3")
+        print("init  test9")
         self._init_exchange()
         self.logger = logging.getLogger(__name__)
 
@@ -177,14 +175,14 @@ class MultiTimeframeStrategy(BaseStrategy):
                 signals[tf] = action
                 strengths[tf] = strength
             
-            if len(data) < 3:  # 至少需要3个时间框架
+            if len(data) < 2:  # 至少需要2个时间框架
                 return None
             
             # 获取当前价格
             current_price = data.get('15m', list(data.values())[0])['close'].iloc[-1]
             
-            # 综合评分 - 更新权重，去掉1w和1d周期
-            weights = {'4h': 0.4, '1h': 0.4, '15m': 0.2}
+            # 综合评分 - 更新权重，去掉4h周期
+            weights = {'1h': 0.8, '15m': 0.2}
             total_score = 0
             reasoning = []
             
@@ -238,7 +236,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             # 根据是否所有时间框架一致决定使用的TARGET_MULTIPLIER
             target_multiplier = self.config['TARGET_MULTIPLIER']
             if all_agreed:
-                target_multiplier *= 3  # 所有时间框架一致时，使用3倍的TARGET_MULTIPLIER
+                target_multiplier *= 2  # 所有时间框架一致时，使用2倍的TARGET_MULTIPLIER
             
             # 根据交易方向计算ATR相关价格（做多/做空）
             if overall_action == "买入":
@@ -267,26 +265,37 @@ class MultiTimeframeStrategy(BaseStrategy):
             
             # 过滤信号应该移动到这里
 
-            return MultiTimeframeSignal(
-                symbol=symbol,
-                weekly_trend="观望",  # 默认值，不再使用
-                daily_trend="观望",   # 默认值，不再使用
-                h4_signal=signals.get('4h', '观望'),
-                h1_signal=signals.get('1h', '观望'),
-                m15_signal=signals.get('15m', '观望'),
-                timeframe_signals=timeframe_signals,
-                overall_action=overall_action,
-                confidence_level=confidence,
-                total_score=total_score,
-                entry_price=current_price,
-                target_short=target_short,
-                target_medium=target_medium,
-                target_long=target_long,
-                stop_loss=stop_loss,
-                atr_one=atr_one,
-                reasoning=reasoning,
-                timestamp=datetime.now()
-            )
+            # 创建信号参数字典
+            signal_params = {
+                'symbol': symbol,
+                'weekly_trend': "观望",  # 默认值，不再使用
+                'daily_trend': "观望",   # 默认值，不再使用
+                'overall_action': overall_action,
+                'confidence_level': confidence,
+                'total_score': total_score,
+                'entry_price': current_price,
+                'target_short': target_short,
+                'target_medium': target_medium,
+                'target_long': target_long,
+                'stop_loss': stop_loss,
+                'atr_one': atr_one,
+                'reasoning': reasoning,
+                'timestamp': datetime.now(),
+                'timeframe_signals': timeframe_signals
+            }
+            
+            # 动态添加时间框架信号参数
+            for timeframe in TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {}).keys():
+                # 将时间框架格式化为驼峰式命名
+                if timeframe == '1h':
+                    field_name = 'h1_signal'
+                elif timeframe == '15m':
+                    field_name = 'm15_signal'
+                else:
+                    field_name = f'{timeframe}_signal'
+                signal_params[field_name] = signals.get(timeframe, '观望')
+            
+            return MultiTimeframeSignal(**signal_params)
         
         except Exception as e:
             # 实际使用时应该记录日志
@@ -306,7 +315,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         # 使用配置的交易信号触发周期
         if timeframe == self.config["SIGNAL_TRIGGER_TIMEFRAME"]:
             # 交易信号触发周期只运行RSI交叉评分
-            score += calculate_bollinger_band_signal_score(df) / 3
+            score += calculate_rsi_crossover_score(df)
         else:
             # 非交易信号触发周期运行其他评分方法
             score += calculate_ema_trend_indicators_and_score(df, current_price, timeframe)
@@ -340,7 +349,6 @@ class MultiTimeframeStrategy(BaseStrategy):
             字典，键为时间框架名称，值为所需数据长度
         """
         return TRADING_CONFIG.get('TIMEFRAME_DATA_LENGTHS', {
-            '4h': 168,   # 4小时
             '1h': 168,   # 1小时
             '15m': 168   # 15分钟
         })
@@ -605,7 +613,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             f.write("📊 多时间框架专业分析报告\n")
             f.write("=" * 80 + "\n")
             f.write(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"时间框架维度: 周线→日线→4小时→1小时→15分钟\n")
+            f.write(f"时间框架维度: 1小时→15分钟\n")
             f.write(f"发现机会: {len(all_opportunities)}\n")
             f.write(f"策略名称: {self.get_name()}\n")
             f.write("=" * 80 + "\n\n")
@@ -650,7 +658,6 @@ class MultiTimeframeStrategy(BaseStrategy):
                 # 写入多时间框架分析
                 f.write(f"周线趋势: {weekly_trend}\n")
                 f.write(f"日线趋势: {daily_trend}\n")
-                f.write(f"4小时信号: {h4_signal}\n")
                 f.write(f"1小时信号: {h1_signal}\n")
                 f.write(f"15分钟信号: {m15_signal}\n")
                 

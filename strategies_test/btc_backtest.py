@@ -1211,27 +1211,37 @@ def generate_summary_report(strategy_name, backtest_start_time, backtest_end_tim
             f.write(f"  - {symbol}\n")
         
         f.write("\n各标的表现情况:\n")
-        f.write("-" * 80 + "\n")
-        f.write(f"{'标的':<15}{'结束金额(USDT)':<20}{'开仓次数':<10}{'止盈次数':<10}{'止损次数':<10}\n")
-        f.write("-" * 80 + "\n")
-        
-        for symbol, stats in symbol_stats.items():
-            f.write(f"{symbol:<15}{stats['final_capital']:<20.2f}{stats['buy_trades']:<10}{stats['take_profit_trades']:<10}{stats['stop_loss_trades']:<10}\n")
+        f.write("-" * 100 + "\n")
+        f.write(f"{'标的':<15}{'结束金额(USDT)':<20}{'多单次数':<10}{'空单次数':<10}{'止盈次数':<10}{'止损次数':<10}\n")
+        f.write("-" * 100 + "\n")
         
         # 计算总体统计
         total_initial = sum(stats['initial_capital'] for stats in symbol_stats.values())
         total_final = sum(stats['final_capital'] for stats in symbol_stats.values())
         total_profit = total_final - total_initial
         total_profit_rate = (total_profit / total_initial) * 100 if total_initial > 0 else 0
-        total_trades = sum(stats['buy_trades'] for stats in symbol_stats.values())
-        total_take_profit = sum(stats['take_profit_trades'] for stats in symbol_stats.values())
-        total_stop_loss = sum(stats['stop_loss_trades'] for stats in symbol_stats.values())
+        total_buy_trades = 0  # 多单次数（买入次数）
+        total_sell_trades = 0  # 空单次数（卖出次数）
+        total_take_profit = 0
+        total_stop_loss = 0
         
-        f.write("-" * 80 + "\n")
-        f.write(f"{'总计':<15}{total_final:<20.2f}{total_trades:<10}{total_take_profit:<10}{total_stop_loss:<10}\n")
+        for symbol, stats in symbol_stats.items():
+            # 多单次数 = 买入次数，空单次数 = 卖出次数
+            f.write(f"{symbol:<15}{stats['final_capital']:<20.2f}{stats['buy_trades']:<10}{stats['sell_trades']:<10}{stats['take_profit_trades']:<10}{stats['stop_loss_trades']:<10}\n")
+            
+            # 累计总体统计
+            total_buy_trades += stats['buy_trades']
+            total_sell_trades += stats['sell_trades']
+            total_take_profit += stats['take_profit_trades']
+            total_stop_loss += stats['stop_loss_trades']
+        
+        f.write("-" * 100 + "\n")
+        f.write(f"{'总计':<15}{total_final:<20.2f}{total_buy_trades:<10}{total_sell_trades:<10}{total_take_profit:<10}{total_stop_loss:<10}\n")
         f.write("\n")
         f.write(f"总体收益率: {total_profit_rate:.2f}%\n")
         f.write(f"总体收益金额: {total_profit:.2f} USDT\n")
+        f.write(f"多单次数统计: {total_buy_trades}\n")
+        f.write(f"空单次数统计: {total_sell_trades}\n")
     
     logger.info(f"汇总报告已保存到: {summary_file}")
 
