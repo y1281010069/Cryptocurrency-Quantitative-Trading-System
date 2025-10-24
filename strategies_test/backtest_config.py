@@ -5,7 +5,7 @@ import datetime
 START_YEAR = 2024
 START_MONTH = 1
 START_DAY = 1
-BACKTEST_DAYS = 40  # 回测天数
+BACKTEST_DAYS = 605  # 回测天数
 
 # 初始资金配置
 INITIAL_CAPITAL = 10000.0
