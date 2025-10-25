@@ -36,8 +36,8 @@ TRADING_CONFIG = {
     "BUY_THRESHOLD": 0.1, 
     "SELL_THRESHOLD": -0.1,
     "ATR_PERIOD": 14,
-    "TARGET_MULTIPLIER": 4.5,
-    "STOP_LOSS_MULTIPLIER": 3,
+    "TARGET_MULTIPLIER": 3,
+    "STOP_LOSS_MULTIPLIER": 2,
     "ENABLED_SYMBOLS": None,
     "DISABLED_SYMBOLS": [
         "USDC/USDT"
@@ -236,7 +236,7 @@ class MultiTimeframeStrategy(BaseStrategy):
             # 根据是否所有时间框架一致决定使用的TARGET_MULTIPLIER
             target_multiplier = self.config['TARGET_MULTIPLIER']
             if all_agreed:
-                target_multiplier *= 2  # 所有时间框架一致时，使用2倍的TARGET_MULTIPLIER
+                target_multiplier *= 1  # 所有时间框架一致时，使用2倍的TARGET_MULTIPLIER
             
             # 根据交易方向计算ATR相关价格（做多/做空）
             if overall_action == "买入":

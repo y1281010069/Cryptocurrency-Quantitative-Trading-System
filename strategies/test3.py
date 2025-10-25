@@ -40,13 +40,16 @@ TRADING_CONFIG = {
     "STOP_LOSS_MULTIPLIER": 3,
     "ENABLED_SYMBOLS": None,
     "DISABLED_SYMBOLS": [
-        "USDC/USDT"
+        "USDC/USDT:USDT"
     ],
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
     "MAX_POSITIONS": 30,
     "MECHANISM_ID": 14,
     "LOSS": 0.2,  # 损失参数，传递给API
     "SIGNAL_TRIGGER_TIMEFRAME": "15m",  # 交易信号触发周期
+    "LOSS_CONFIG": {
+        "XAUT-USDT": 0.4,
+    },
     "TIMEFRAME_DATA_LENGTHS": {
         '4h': 299,   # 4小时
         '1h': 299,   # 1小时
@@ -394,12 +397,22 @@ class MultiTimeframeStrategy(BaseStrategy):
             # 发送HTTP POST请求到指定API
             for signal in trade_signals:
                 try:
+                    print (signal.symbol)
                     # 格式化name参数：从KAITO/USDT转换为KAITO（去掉-USDT后缀）
                     name = signal.symbol.replace('/', '-').replace(':USDT', '')
                     
                     # 使用lib2.py中的send_trading_signal_to_api方法发送交易信号，传入LOSS和mechanism_id参数
-                    # 从配置中获取LOSS值，如果不存在则使用默认值1
-                    loss_value = self.config.get('LOSS', 1)
+                    # 优先使用LOSS_CONFIG中针对特定标的的设置
+                    loss_value = 1  # 默认值
+                    loss_config = self.config.get('LOSS_CONFIG', {})
+                    
+                    # 使用name字段去匹配LOSS_CONFIG里面的配置
+                    if name in loss_config:
+                        loss_value = loss_config[name]
+                    # 如果没有特定配置，则使用策略内通用LOSS设置
+                    elif 'LOSS' in self.config:
+                        loss_value = self.config['LOSS']
+                    
                     # 从配置中获取MECHANISM_ID值
                     mechanism_id_value = self.config.get('MECHANISM_ID', '')
                     send_trading_signal_to_api(signal, name, logger, LOSS=loss_value, mechanism_id=mechanism_id_value)  

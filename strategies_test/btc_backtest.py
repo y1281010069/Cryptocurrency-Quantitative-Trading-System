@@ -1061,10 +1061,13 @@ class BacktestEngine:
             
             logger.info(f"处理剩余持仓，使用的最新时间框架数据: {list(latest_data.keys())}")
             
-            # 优先使用15m时间框架的数据，然后是1h，最后是其他时间框架
+            # 优先使用15m时间框架的数据，如果没有则使用5m，然后是1h，最后是其他时间框架
             if '15m' in latest_data:
                 final_price = latest_data['15m']['close'].iloc[-1]
                 final_date = latest_data['15m']['datetime'].iloc[-1]
+            elif '5m' in latest_data:
+                final_price = latest_data['5m']['close'].iloc[-1]
+                final_date = latest_data['5m']['datetime'].iloc[-1]
             elif '1h' in latest_data:
                 final_price = latest_data['1h']['close'].iloc[-1]
                 final_date = latest_data['1h']['datetime'].iloc[-1]

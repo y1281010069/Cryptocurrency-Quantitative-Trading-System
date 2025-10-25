@@ -207,7 +207,7 @@ class MultiTimeframeProfessionalSystem:
             all_opportunities = self._analyze_with_strategies(all_data)
             step_times['策略分析'] = time.time() - step_start
             self.logger.info(f"🔍 分析完成，找到 {sum(len(ops) for ops in all_opportunities.values())} 个交易机会")
-            
+
              # 步骤6: 生成报告和保存信号
             step_start = time.time()
             self._generate_reports(all_opportunities)
