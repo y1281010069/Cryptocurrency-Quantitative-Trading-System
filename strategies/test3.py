@@ -425,7 +425,7 @@ class MultiTimeframeStrategy(BaseStrategy):
         return None
         
     def filter_by_positions(self, symbols: List[Any]) -> List[Any]:
-        self.logger.info(f"🔍 调用filter_by_positions方法，配置: {self.config}")
+        # self.logger.info(f"🔍 调用filter_by_positions方法，配置: {self.config}")
         # 检查self.exchange是否存在
         if not hasattr(self, 'exchange') or self.exchange is None:
             self.logger.error("❌ self.exchange不存在或为None，无法获取仓位数据")

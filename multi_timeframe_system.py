@@ -393,7 +393,7 @@ class MultiTimeframeProfessionalSystem:
         for symbol in symbols:
             symbol_data = {}
             try:
-                self.logger.info(f"正在获取 {symbol} 的K线数据...")
+                # self.logger.info(f"正在获取 {symbol} 的K线数据...")
                 for tf in all_timeframes:
                     try:
                         # 获取足够的历史数据
@@ -418,8 +418,6 @@ class MultiTimeframeProfessionalSystem:
                 # 如果至少有一半时间框架的数据，则保留
                 if len(valid_timeframes) >= len(all_timeframes) / 2:
                     all_data[symbol] = symbol_data
-                else:
-                    self.logger.warning(f"{symbol} 的有效时间框架不足，跳过")
             except Exception as e:
                 self.logger.error(f"处理 {symbol} 的数据时发生错误: {e}")
         return all_data
@@ -476,19 +474,7 @@ class MultiTimeframeProfessionalSystem:
                 self.logger.error(f"排序交易机会时发生错误: {e}")
                 # 如果排序失败，继续执行，不中断流程
             self.logger.info(f"📝 策略 '{strategy_name}' 找到 {len(opportunities)} 个交易机会")
-            
-            # 打印前5个最佳交易机会
-            if opportunities:
-                self.logger.info("\n🏆 TOP 5 交易机会：")
-                for i, opportunity in enumerate(opportunities[:5], 1):
-                    # 尝试获取各种属性，如果不存在则使用默认值
-                    symbol = getattr(opportunity, 'symbol', '未知')
-                    total_score = getattr(opportunity, 'total_score', 0)
-                    overall_action = getattr(opportunity, 'overall_action', '未知')
-                    confidence_level = getattr(opportunity, 'confidence_level', '未知')
-                    
-                    self.logger.info(f"{i}. {symbol} - 操作: {overall_action}, 评分: {total_score:.3f}, 信心: {confidence_level}")
-            
+    
             # 调用策略实例的方法保存交易信号
             strategy_instance = self.strategies[strategy_name]
             # strategy_instance._save_trade_signals(opportunities)
