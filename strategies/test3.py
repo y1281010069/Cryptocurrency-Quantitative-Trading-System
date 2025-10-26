@@ -40,7 +40,7 @@ TRADING_CONFIG = {
     "STOP_LOSS_MULTIPLIER": 3,
     "ENABLED_SYMBOLS": None,
     "DISABLED_SYMBOLS": [
-        "USDC/USDT:USDT"
+        "USDC/USDT"
     ],
     "VOLUME_THRESHOLD": 4000000,  # 交易量筛选阈值（USDT）
     "MAX_POSITIONS": 30,

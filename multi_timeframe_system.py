@@ -190,6 +190,12 @@ class MultiTimeframeProfessionalSystem:
             step_times['筛选高流动性交易对'] = time.time() - step_start
             self.logger.info(f"📊 筛选后剩余 {len(filtered_symbols)} 个高流动性交易对")
             
+            # 步骤2.5: 过滤禁用的交易对
+            step_start = time.time()
+            filtered_symbols = self._filter_disabled_symbols(filtered_symbols)
+            step_times['过滤禁用交易对'] = time.time() - step_start
+            self.logger.info(f"🚫 应用禁用交易对过滤后，剩余 {len(filtered_symbols)} 个交易对")
+            
             # 步骤3: 收集时间框架信息
             step_start = time.time()
             timeframes_info = self._collect_timeframes_info()
@@ -305,6 +311,56 @@ class MultiTimeframeProfessionalSystem:
         except Exception as e:
             self.logger.error(f"筛选高流动性交易对失败: {e}")
             return symbols  # 出错时返回所有交易对
+    
+    def _filter_disabled_symbols(self, symbols: List[str]) -> List[str]:
+        """根据所有策略的DISABLED_SYMBOLS配置过滤交易对"""
+        if not self.strategies:
+            return symbols
+        
+        # 收集所有策略中配置的DISABLED_SYMBOLS
+        all_disabled_symbols = set()
+        for strategy_name, strategy in self.strategies.items():
+            if hasattr(strategy, 'config') and 'DISABLED_SYMBOLS' in strategy.config:
+                disabled_symbols = strategy.config['DISABLED_SYMBOLS']
+                if disabled_symbols:
+                    for symbol in disabled_symbols:
+                        # 添加多种格式的交易对表示，确保能匹配交易所返回的不同格式
+                        # 原始格式
+                        all_disabled_symbols.add(symbol)
+                        # 斜杠转破折号格式
+                        all_disabled_symbols.add(symbol.replace('/', '-'))
+                        # 大写格式
+                        all_disabled_symbols.add(symbol.replace('/', '-').upper())
+                        # 小写格式
+                        all_disabled_symbols.add(symbol.replace('/', '-').lower())
+                    self.logger.info(f"策略 '{strategy_name}' 的禁用交易对: {disabled_symbols}")
+        
+        if all_disabled_symbols:
+            # 打印所有交易对，用于调试
+            self.logger.info(f"当前交易对列表（前10个）: {symbols[:10]}")
+            
+            # 过滤掉禁用的交易对
+            filtered_symbols = []
+            for symbol in symbols:
+                # 检查symbol是否与任何禁用的交易对匹配（忽略格式差异）
+                is_disabled = False
+                # 转换symbol为统一格式进行比较
+                symbol_normalized = symbol.upper().replace('/', '-')
+                for disabled in all_disabled_symbols:
+                    disabled_normalized = disabled.upper().replace('/', '-')
+                    if symbol_normalized == disabled_normalized:
+                        is_disabled = True
+                        self.logger.info(f"过滤掉禁用交易对: {symbol} (匹配: {disabled})")
+                        break
+                
+                if not is_disabled:
+                    filtered_symbols.append(symbol)
+            
+            self.logger.info(f"应用禁用交易对过滤: 移除 {len(symbols) - len(filtered_symbols)} 个交易对")
+            self.logger.info(f"禁用的交易对格式列表: {list(all_disabled_symbols)}")
+            return filtered_symbols
+        
+        return symbols
     
     def _collect_timeframes_info(self) -> Dict[str, Dict[str, int]]:
         """收集所有策略需要的时间框架信息"""
