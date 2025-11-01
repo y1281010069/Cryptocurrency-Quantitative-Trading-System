@@ -414,6 +414,23 @@ class MultiTimeframeStrategy(BaseStrategy):
                     elif 'LOSS' in self.config:
                         loss_value = self.config['LOSS']
                     
+                    # 从Redis中获取交易倍率trade_mul，默认为1
+                    try:
+                        # 创建Redis连接
+                        r = redis.Redis(
+                            host=REDIS_CONFIG['ADDR'].split(':')[0],
+                            port=int(REDIS_CONFIG['ADDR'].split(':')[1]),
+                            password=REDIS_CONFIG['PASSWORD'],
+                            decode_responses=True
+                        )
+                        # 获取trade_mul值，如果不存在则使用默认值1
+                        trade_mul = float(r.get('trade_mul') or 1)
+                        # 应用交易倍率
+                        loss_value = loss_value * trade_mul
+                        logger.info(f"应用交易倍率: {trade_mul}, 原始loss: {loss_value/trade_mul}, 调整后loss: {loss_value}")
+                    except Exception as e:
+                        logger.error(f"获取Redis中的trade_mul失败，使用默认值1: {e}")
+                    
                     # 从配置中获取MECHANISM_ID值
                     mechanism_id_value = self.config.get('MECHANISM_ID', '')
                     send_trading_signal_to_api(signal, name, logger, LOSS=loss_value, mechanism_id=mechanism_id_value)  

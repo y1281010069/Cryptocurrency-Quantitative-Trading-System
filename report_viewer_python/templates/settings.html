@@ -1,0 +1,182 @@
+{% extends "layout.html" %}
+
+{% block title %}系统设置 - 加密货币量化交易系统{% endblock %}
+
+{% block page_title %}系统设置{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-6">
+            <i class="fa fa-cog mr-2"></i>交易参数设置
+        </h3>
+        
+        <form id="settingsForm" class="space-y-6">
+            <!-- 交易倍率设置 -->
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <div class="flex items-center justify-between mb-3">
+                    <label for="trade_mul" class="text-sm font-medium text-gray-700">
+                        交易倍率 (trade_mul)
+                    </label>
+                    <span class="text-xs text-gray-500 bg-blue-100 px-2 py-1 rounded">默认值: 1.0</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <input type="number" 
+                           id="trade_mul" 
+                           name="trade_mul" 
+                           step="0.1" 
+                           min="0.1" 
+                           max="10"
+                           class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                           value="{{ current_trade_mul or 1.0 }}">
+                    <span class="text-sm text-gray-500">倍</span>
+                </div>
+                <p class="mt-2 text-xs text-gray-600">
+                    交易倍率将应用于所有交易的损失计算。例如，设置为1.5时，所有损失值将乘以1.5。
+                </p>
+            </div>
+            
+            <!-- 其他可能的设置项 -->
+            <div class="border-t pt-4">
+                <h4 class="text-md font-medium text-gray-700 mb-3">其他设置</h4>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600">
+                        更多系统设置将在后续版本中添加。
+                    </p>
+                </div>
+            </div>
+            
+            <!-- 提交按钮 -->
+            <div class="flex justify-end space-x-3 pt-4">
+                <button type="button" 
+                        id="resetBtn"
+                        class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
+                    <i class="fa fa-undo mr-2"></i>重置
+                </button>
+                <button type="submit" 
+                        class="px-4 py-2 bg-primary text-white rounded-md hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
+                    <i class="fa fa-save mr-2"></i>保存设置
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 提示消息 -->
+<div id="notification" class="fixed bottom-4 right-4 transform translate-x-full transition-transform duration-300 max-w-sm">
+    <div class="bg-white rounded-lg shadow-lg p-4 border-l-4">
+        <div class="flex items-center">
+            <div class="flex-shrink-0">
+                <i class="fa fa-check-circle text-xl"></i>
+            </div>
+            <div class="ml-3">
+                <p class="text-sm font-medium text-gray-900" id="notificationTitle">成功</p>
+                <p class="text-sm text-gray-500" id="notificationMessage">设置已保存</p>
+            </div>
+            <div class="ml-auto pl-3">
+                <button type="button" class="inline-flex text-gray-400 hover:text-gray-500 focus:outline-none" id="closeNotification">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 获取DOM元素
+        const settingsForm = document.getElementById('settingsForm');
+        const resetBtn = document.getElementById('resetBtn');
+        const notification = document.getElementById('notification');
+        const notificationTitle = document.getElementById('notificationTitle');
+        const notificationMessage = document.getElementById('notificationMessage');
+        const closeNotification = document.getElementById('closeNotification');
+        
+        // 显示通知
+        function showNotification(title, message, type = 'success') {
+            notificationTitle.textContent = title;
+            notificationMessage.textContent = message;
+            
+            // 设置通知样式
+            const notificationDiv = notification.querySelector('div');
+            const icon = notification.querySelector('i');
+            
+            // 重置类
+            notificationDiv.className = 'bg-white rounded-lg shadow-lg p-4 border-l-4';
+            icon.className = 'fa text-xl';
+            
+            if (type === 'success') {
+                notificationDiv.classList.add('border-green-500');
+                icon.classList.add('fa-check-circle', 'text-green-500');
+            } else if (type === 'error') {
+                notificationDiv.classList.add('border-red-500');
+                icon.classList.add('fa-exclamation-circle', 'text-red-500');
+            } else if (type === 'warning') {
+                notificationDiv.classList.add('border-yellow-500');
+                icon.classList.add('fa-exclamation-triangle', 'text-yellow-500');
+            }
+            
+            // 显示通知
+            notification.classList.remove('translate-x-full');
+            
+            // 5秒后自动隐藏
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+            }, 5000);
+        }
+        
+        // 关闭通知
+        closeNotification.addEventListener('click', function() {
+            notification.classList.add('translate-x-full');
+        });
+        
+
+        
+        // 提交表单
+        settingsForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const tradeMul = document.getElementById('trade_mul').value;
+            
+            // 验证输入
+            if (isNaN(tradeMul) || parseFloat(tradeMul) < 0.1 || parseFloat(tradeMul) > 10) {
+                showNotification('错误', '交易倍率必须在0.1到10之间', 'error');
+                return;
+            }
+            
+            // 发送请求
+            fetch('/api/settings/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    trade_mul: parseFloat(tradeMul)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('成功', '设置已保存', 'success');
+                } else {
+                    showNotification('错误', data.message || '保存设置失败', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('保存设置失败:', error);
+                showNotification('错误', '保存设置失败，请稍后再试', 'error');
+            });
+        });
+        
+        // 重置按钮
+        resetBtn.addEventListener('click', function() {
+            document.getElementById('trade_mul').value = '1.0';
+            showNotification('提示', '已重置为默认值', 'warning');
+        });
+        
+
+    });
+</script>
+{% endblock %}

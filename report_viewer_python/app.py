@@ -76,12 +76,14 @@ from routes.report_routes import report_bp
 from routes.okx_routes import okx_bp
 from routes.config_routes import config_bp
 from routes.leverage_routes import leverage_bp
+from routes.settings_routes import settings_bp, settings_control as routes_settings_control
 
 # 导入控制器
 from control.report_control import ReportControl
 from control.okx_control import OKXControl
 from control.config_control import ConfigControl
 from control.auth_control import AuthControl
+from control.settings_control import SettingsControl
 
 # 初始化OKX交易所连接
 okx_exchange = None
@@ -221,6 +223,7 @@ global_report_control = ReportControl()
 global_okx_control = OKXControl()
 global_config_control = ConfigControl()
 global_auth_control = AuthControl()
+global_settings_control = SettingsControl()
 
 # 将API实例注入到控制器中
 global_okx_control.set_api_clients(okx_public_api=okx_public_api, okx_account_api=okx_account_api, okx_official_api=okx_official_api, okx_exchange=okx_exchange)
@@ -934,6 +937,7 @@ routes.okx_routes.okx_control = global_okx_control
 routes.config_routes.config_control = global_config_control
 routes.leverage_routes.okx_control = global_okx_control
 routes.auth_routes.auth_control = global_auth_control
+routes.settings_routes.settings_control = global_settings_control
 
 # 注册路由蓝图到Flask应用
 app.register_blueprint(auth_bp)
@@ -941,6 +945,8 @@ app.register_blueprint(report_bp)
 app.register_blueprint(okx_bp)
 app.register_blueprint(config_bp)
 app.register_blueprint(leverage_bp)
+app.register_blueprint(settings_bp)
 
 # 启动Flask应用（生产环境应使用专业Web服务器）
-app.run(host='0.0.0.0', debug=False)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', debug=False)
